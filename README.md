@@ -8,9 +8,12 @@ All communication flows through AppSync Events (WebSocket) — no API Gateway.
 
 ```mermaid
 graph TD
-    Admin["Admin UI"] --> AppSync["AppSync Events"]
+    Admin["Admin UI"] --> AppSync
     Player["Player UI"] --> AppSync
     Leaderboard["Leaderboard UI"] --> AppSync
+
+    subgraph AppSync["AppSync Events &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; admin/ &nbsp; · &nbsp; player/ &nbsp; · &nbsp; leaderboard/ &nbsp; · &nbsp; game/ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;"]
+    end
 
     AppSync --> SH["Session Handler"]
     AppSync --> PM["Participant Manager"]
