@@ -1,10 +1,10 @@
-# SAM CLI configuration for Trivia Game v2
+# Copy to samconfig.toml and update with your values
 version = 0.1
 
 [default.global.parameters]
 stack_name = "trivia"
 region = "us-west-2"
-profile = "demo"
+profile = "your-aws-profile"
 
 [default.build.parameters]
 parallel = true
@@ -13,17 +13,7 @@ cached = true
 [default.deploy.parameters]
 stack_name = "trivia"
 region = "us-west-2"
-profile = "demo"
+profile = "your-aws-profile"
 resolve_s3 = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
-
-[default.validate.parameters]
-region = "us-west-2"
-profile = "demo"
-lint = true
-
-[default.logs.parameters]
-region = "us-west-2"
-profile = "demo"
-stack_name = "trivia"
