@@ -1,0 +1,663 @@
+{
+  "categoryName": "Music of the 80s",
+  "questions": [
+    {
+      "questionText": "Who sang the hit song 'Thriller'?",
+      "options": [
+        "Prince",
+        "Michael Jackson",
+        "Stevie Wonder",
+        "Lionel Richie"
+      ],
+      "correctAnswer": "Michael Jackson",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What was the first music video played on MTV when it launched on August 1, 1981?",
+      "options": [
+        "Thriller by Michael Jackson",
+        "Video Killed the Radio Star by The Buggles",
+        "Take On Me by a-ha",
+        "Hungry Like the Wolf by Duran Duran"
+      ],
+      "correctAnswer": "Video Killed the Radio Star by The Buggles",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which Madonna song was her first number-one hit on the Billboard Hot 100?",
+      "options": [
+        "Material Girl",
+        "Like a Prayer",
+        "Like a Virgin",
+        "Papa Don't Preach"
+      ],
+      "correctAnswer": "Like a Virgin",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which band performed 'Livin' on a Prayer'?",
+      "options": [
+        "Def Leppard",
+        "Bon Jovi",
+        "Journey",
+        "Foreigner"
+      ],
+      "correctAnswer": "Bon Jovi",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What year did MTV launch?",
+      "options": [
+        "1979",
+        "1980",
+        "1981",
+        "1983"
+      ],
+      "correctAnswer": "1981",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which artist recorded the 1984 hit 'When Doves Cry'?",
+      "options": [
+        "Michael Jackson",
+        "Prince",
+        "George Michael",
+        "Billy Joel"
+      ],
+      "correctAnswer": "Prince",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Cyndi Lauper's 'Girls Just Want to Have Fun' was released from which debut album?",
+      "options": [
+        "True Colors",
+        "She's So Unusual",
+        "A Night to Remember",
+        "Hat Full of Stars"
+      ],
+      "correctAnswer": "She's So Unusual",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which band had a hit with 'Sweet Dreams (Are Made of This)' in 1983?",
+      "options": [
+        "Depeche Mode",
+        "Tears for Fears",
+        "Eurythmics",
+        "New Order"
+      ],
+      "correctAnswer": "Eurythmics",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "The Live Aid concerts in 1985 were held to raise money for famine relief in which country?",
+      "options": [
+        "Sudan",
+        "Ethiopia",
+        "Somalia",
+        "Kenya"
+      ],
+      "correctAnswer": "Ethiopia",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "'Born in the U.S.A.' is an album by which artist?",
+      "options": [
+        "Bruce Springsteen",
+        "John Mellencamp",
+        "Tom Petty",
+        "Bob Seger"
+      ],
+      "correctAnswer": "Bruce Springsteen",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which Guns N' Roses song was their only number-one single on the Billboard Hot 100?",
+      "options": [
+        "Welcome to the Jungle",
+        "Paradise City",
+        "Sweet Child o' Mine",
+        "Patience"
+      ],
+      "correctAnswer": "Sweet Child o' Mine",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which Wham! single, written by George Michael, was the duo's first UK and US number-one hit?",
+      "options": [
+        "Careless Whisper",
+        "Wake Me Up Before You Go-Go",
+        "Everything She Wants",
+        "Freedom"
+      ],
+      "correctAnswer": "Wake Me Up Before You Go-Go",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which Norwegian band had a worldwide hit with 'Take On Me' in 1985?",
+      "options": [
+        "Roxette",
+        "a-ha",
+        "Europe",
+        "Ace of Base"
+      ],
+      "correctAnswer": "a-ha",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Who performed 'What's Love Got to Do with It', which reached number one in the US in 1984?",
+      "options": [
+        "Donna Summer",
+        "Tina Turner",
+        "Whitney Houston",
+        "Diana Ross"
+      ],
+      "correctAnswer": "Tina Turner",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the name of U2's 1987 album that featured 'With or Without You'?",
+      "options": [
+        "War",
+        "The Joshua Tree",
+        "Achtung Baby",
+        "The Unforgettable Fire"
+      ],
+      "correctAnswer": "The Joshua Tree",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "'Every Breath You Take' was a 1983 hit by which band?",
+      "options": [
+        "Duran Duran",
+        "The Cure",
+        "The Police",
+        "U2"
+      ],
+      "correctAnswer": "The Police",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which Van Halen song, featuring a prominent synthesizer riff, was their only number-one hit on the Billboard Hot 100?",
+      "options": [
+        "Panama",
+        "Hot for Teacher",
+        "Jump",
+        "Runnin' with the Devil"
+      ],
+      "correctAnswer": "Jump",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Whitney Houston had seven consecutive US number-one singles in the 1980s.",
+      "options": [
+        "True",
+        "False"
+      ],
+      "correctAnswer": "True",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which synth-pop duo had a number-one hit with 'West End Girls' in 1986?",
+      "options": [
+        "Erasure",
+        "Pet Shop Boys",
+        "Soft Cell",
+        "Orchestral Manoeuvres in the Dark"
+      ],
+      "correctAnswer": "Pet Shop Boys",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which 1985 charity single was written by Michael Jackson and Lionel Richie and performed by USA for Africa?",
+      "options": [
+        "Do They Know It's Christmas?",
+        "That's What Friends Are For",
+        "We Are the World",
+        "Heal the World"
+      ],
+      "correctAnswer": "We Are the World",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Who produced Michael Jackson's 'Thriller' album?",
+      "options": [
+        "Phil Collins",
+        "Rick Rubin",
+        "Quincy Jones",
+        "Nile Rodgers"
+      ],
+      "correctAnswer": "Quincy Jones",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which Tears for Fears song topped the US Billboard Hot 100 and was described by the band as being about the desire for control and power?",
+      "options": [
+        "Shout",
+        "Everybody Wants to Rule the World",
+        "Head over Heels",
+        "Mad World"
+      ],
+      "correctAnswer": "Everybody Wants to Rule the World",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "The Run-DMC and Aerosmith collaboration 'Walk This Way' appeared on which Run-DMC album?",
+      "options": [
+        "Run-DMC",
+        "King of Rock",
+        "Raising Hell",
+        "Tougher Than Leather"
+      ],
+      "correctAnswer": "Raising Hell",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which Def Leppard album, produced by Robert John 'Mutt' Lange, featured the hit 'Pour Some Sugar on Me'?",
+      "options": [
+        "Pyromania",
+        "Hysteria",
+        "High 'n' Dry",
+        "Adrenalize"
+      ],
+      "correctAnswer": "Hysteria",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "New Order's 'Blue Monday', released in 1983, holds what distinction in music history?",
+      "options": [
+        "First fully electronic number-one single",
+        "Best-selling 12-inch single of all time",
+        "First single to use a drum machine",
+        "Longest song ever to chart"
+      ],
+      "correctAnswer": "Best-selling 12-inch single of all time",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "New Order was formed by the surviving members of which post-punk band after the death of their lead singer Ian Curtis?",
+      "options": [
+        "Bauhaus",
+        "Siouxsie and the Banshees",
+        "Joy Division",
+        "Echo & the Bunnymen"
+      ],
+      "correctAnswer": "Joy Division",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Nena's '99 Luftballons' reached number two on the US Billboard Hot 100. In which language was the US hit version sung?",
+      "options": [
+        "English",
+        "German",
+        "Both English and German",
+        "French"
+      ],
+      "correctAnswer": "German",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which hip-hop producer brought Run-DMC and Aerosmith together for the 'Walk This Way' collaboration in 1986?",
+      "options": [
+        "Dr. Dre",
+        "Russell Simmons",
+        "Rick Rubin",
+        "DJ Jazzy Jeff"
+      ],
+      "correctAnswer": "Rick Rubin",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which Duran Duran song reached number 3 on the Billboard Hot 100 after heavy rotation of its music video on MTV?",
+      "options": [
+        "Rio",
+        "A View to a Kill",
+        "Hungry Like the Wolf",
+        "The Reflex"
+      ],
+      "correctAnswer": "Hungry Like the Wolf",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "The Live Aid concerts on July 13, 1985 were held simultaneously at Wembley Stadium in London and which US venue?",
+      "options": [
+        "Madison Square Garden in New York",
+        "Soldier Field in Chicago",
+        "John F. Kennedy Stadium in Philadelphia",
+        "The Rose Bowl in Pasadena"
+      ],
+      "correctAnswer": "John F. Kennedy Stadium in Philadelphia",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Phil Collins' debut solo single 'In the Air Tonight' was released in 1981 from which album?",
+      "options": [
+        "No Jacket Required",
+        "Hello, I Must Be Going!",
+        "Face Value",
+        "But Seriously"
+      ],
+      "correctAnswer": "Face Value",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which Talking Heads concert film, directed by Jonathan Demme and released in 1984, is widely considered one of the greatest concert movies ever made?",
+      "options": [
+        "True Stories",
+        "Rattle and Hum",
+        "Stop Making Sense",
+        "The Last Waltz"
+      ],
+      "correctAnswer": "Stop Making Sense",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Metallica's 'Master of Puppets' (1986) is notable for being the first album of which genre to be certified platinum?",
+      "options": [
+        "Glam metal",
+        "Thrash metal",
+        "Death metal",
+        "Black metal"
+      ],
+      "correctAnswer": "Thrash metal",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "The charity song 'Do They Know It's Christmas?' (1984) was written by Bob Geldof and which Ultravox member?",
+      "options": [
+        "John Foxx",
+        "Billy Currie",
+        "Midge Ure",
+        "Warren Cann"
+      ],
+      "correctAnswer": "Midge Ure",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which Dire Straits song featured Sting singing the opening line 'I want my MTV' and was taken from the 1985 album 'Brothers in Arms'?",
+      "options": [
+        "Sultans of Swing",
+        "Walk of Life",
+        "Money for Nothing",
+        "So Far Away"
+      ],
+      "correctAnswer": "Money for Nothing",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "The Smiths, featuring vocalist Morrissey and guitarist Johnny Marr, were formed in 1982 in which English city?",
+      "options": [
+        "London",
+        "Liverpool",
+        "Manchester",
+        "Sheffield"
+      ],
+      "correctAnswer": "Manchester",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which George Michael solo album, released in 1987, became the first album by a white solo artist to reach number one on the Billboard Top Black Albums chart?",
+      "options": [
+        "Listen Without Prejudice Vol. 1",
+        "Faith",
+        "Older",
+        "Songs from the Last Century"
+      ],
+      "correctAnswer": "Faith",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which INXS single from the 1987 album 'Kick' was the Australian band's only US number-one hit?",
+      "options": [
+        "New Sensation",
+        "Never Tear Us Apart",
+        "Need You Tonight",
+        "Devil Inside"
+      ],
+      "correctAnswer": "Need You Tonight",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "R.E.M. was formed in 1980 in Athens, Georgia. 'It's the End of the World as We Know It (And I Feel Fine)' appeared on which 1987 album?",
+      "options": [
+        "Murmur",
+        "Life's Rich Pageant",
+        "Document",
+        "Green"
+      ],
+      "correctAnswer": "Document",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Bruce Springsteen's 'Born in the U.S.A.' album (1984) produced how many top-10 singles on the Billboard Hot 100?",
+      "options": [
+        "Three",
+        "Five",
+        "Seven",
+        "Nine"
+      ],
+      "correctAnswer": "Seven",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "How many singles from Michael Jackson's 'Thriller' album reached the top 10 on the Billboard Hot 100?",
+      "options": [
+        "Five",
+        "Six",
+        "Seven",
+        "Nine"
+      ],
+      "correctAnswer": "Seven",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "The music video for Michael Jackson's 'Thriller' was directed by John Landis. Approximately how long is the video?",
+      "options": [
+        "7 minutes",
+        "10 minutes",
+        "14 minutes",
+        "18 minutes"
+      ],
+      "correctAnswer": "14 minutes",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Prince's 'When Doves Cry' (1984) was notable for lacking which instrument that is normally present in pop and R&B recordings?",
+      "options": [
+        "Drums",
+        "Guitar",
+        "Bass",
+        "Keyboards"
+      ],
+      "correctAnswer": "Bass",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Which Bon Jovi album, produced by Bruce Fairbairn and released in 1986, was named by Billboard as the top-selling album of 1987?",
+      "options": [
+        "7800\u00b0 Fahrenheit",
+        "Slippery When Wet",
+        "New Jersey",
+        "Keep the Faith"
+      ],
+      "correctAnswer": "Slippery When Wet",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Def Leppard drummer Rick Allen lost his left arm in a car accident on New Year's Eve of which year?",
+      "options": [
+        "1983",
+        "1984",
+        "1985",
+        "1986"
+      ],
+      "correctAnswer": "1984",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Cyndi Lauper's debut album 'She's So Unusual' (1983) was the first debut album by a female artist to achieve how many top-five singles on the Billboard Hot 100?",
+      "options": [
+        "Two",
+        "Three",
+        "Four",
+        "Five"
+      ],
+      "correctAnswer": "Four",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Whitney Houston's self-titled debut album (1985) set a record for a female artist in the 1980s by accumulating how many total weeks at number one on the Billboard 200 (combined with her second album 'Whitney')?",
+      "options": [
+        "15",
+        "20",
+        "25",
+        "30"
+      ],
+      "correctAnswer": "25",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "The Cure's 'Just Like Heaven' (1987) appeared on which album?",
+      "options": [
+        "The Head on the Door",
+        "Kiss Me, Kiss Me, Kiss Me",
+        "Disintegration",
+        "Wish"
+      ],
+      "correctAnswer": "Kiss Me, Kiss Me, Kiss Me",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Mark Knopfler of Dire Straits wrote the lyrics to 'Money for Nothing' after overhearing workers complaining while watching MTV in what type of store?",
+      "options": [
+        "A record store",
+        "An appliance/department store",
+        "A bar",
+        "A grocery store"
+      ],
+      "correctAnswer": "An appliance/department store",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Guns N' Roses' debut album 'Appetite for Destruction' (1987) has been certified how many times platinum by the RIAA?",
+      "options": [
+        "10 times",
+        "14 times",
+        "18 times",
+        "22 times"
+      ],
+      "correctAnswer": "18 times",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Depeche Mode's 'Enjoy the Silence' was originally written by Martin Gore as what type of song before being reworked by the band?",
+      "options": [
+        "A dance track",
+        "A ballad",
+        "A spoken-word piece",
+        "An instrumental"
+      ],
+      "correctAnswer": "A ballad",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Metallica's 'Master of Puppets' (1986) was the band's final album to feature which bassist, who died in a tour bus accident later that year?",
+      "options": [
+        "Jason Newsted",
+        "Cliff Burton",
+        "Robert Trujillo",
+        "Ron McGovney"
+      ],
+      "correctAnswer": "Cliff Burton",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "'Girls Just Want to Have Fun' was originally written and recorded as a demo in 1979 by which songwriter before Cyndi Lauper made it famous?",
+      "options": [
+        "Billy Steinberg",
+        "Robert Hazard",
+        "Tom Kelly",
+        "Desmond Child"
+      ],
+      "correctAnswer": "Robert Hazard",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Soft Cell's 'Tainted Love' (1981) was a cover of a song originally recorded in 1964 by which artist?",
+      "options": [
+        "Dusty Springfield",
+        "Martha Reeves",
+        "Gloria Jones",
+        "Brenda Lee"
+      ],
+      "correctAnswer": "Gloria Jones",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "The English lyrics for Nena's '99 Red Balloons' were written by Kevin McAlea, an Irish musician best known for working with which other artist?",
+      "options": [
+        "Sinead O'Connor",
+        "Kate Bush",
+        "Enya",
+        "Peter Gabriel"
+      ],
+      "correctAnswer": "Kate Bush",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Roxette's 'The Look' became a US number-one hit in 1989 after an American exchange student brought a copy of their album home to which US state?",
+      "options": [
+        "California",
+        "Minnesota",
+        "Ohio",
+        "New York"
+      ],
+      "correctAnswer": "Minnesota",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Prince became the first North American artist to simultaneously have a number-one album, movie, and single in 1984. What was the number-one single?",
+      "options": [
+        "Purple Rain",
+        "Let's Go Crazy",
+        "When Doves Cry",
+        "Kiss"
+      ],
+      "correctAnswer": "When Doves Cry",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Michael Jackson's 'Thriller' album spent how many non-consecutive weeks at number one on the Billboard 200?",
+      "options": [
+        "24",
+        "29",
+        "37",
+        "42"
+      ],
+      "correctAnswer": "37",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Which producer was originally slated to produce Def Leppard's 'Hysteria' album before Robert John 'Mutt' Lange ultimately took over?",
+      "options": [
+        "Trevor Horn",
+        "Jim Steinman",
+        "Bob Rock",
+        "Steve Lillywhite"
+      ],
+      "correctAnswer": "Jim Steinman",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Tina Turner's 'What's Love Got to Do with It' (1984) was written by which songwriting duo?",
+      "options": [
+        "Stock, Aitken & Waterman",
+        "Desmond Child and Diane Warren",
+        "Terry Britten and Graham Lyle",
+        "Jimmy Jam and Terry Lewis"
+      ],
+      "correctAnswer": "Terry Britten and Graham Lyle",
+      "difficulty": "hard"
+    }
+  ]
+}

@@ -60,6 +60,21 @@ const finalScore = ref(0)
 const questionsAnswered = ref(0)
 const totalQuestions = ref(0)
 
+// Post-game report
+interface QuestionResult {
+  questionNum: number
+  questionText: string
+  options: string[]
+  correctAnswer: string
+  difficulty: string
+  points: number
+  selectedOption: string | null
+  isCorrect: boolean
+  wasSkipped: boolean
+}
+const questionResults = ref<QuestionResult[]>([])
+const showReport = ref(false)
+
 // Ready callback token
 const readyCallbackToken = ref('')
 
@@ -82,6 +97,7 @@ interface StoredState {
   finalScore: number
   questionsAnswered: number
   totalQuestions: number
+  questionResults: QuestionResult[]
 }
 
 function saveState() {
@@ -95,6 +111,7 @@ function saveState() {
     finalScore: finalScore.value,
     questionsAnswered: questionsAnswered.value,
     totalQuestions: totalQuestions.value,
+    questionResults: questionResults.value,
   }
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state))
 }
@@ -180,6 +197,7 @@ function handlePlayerEvent(event: unknown) {
       finalScore.value = data.totalScore as number
       questionsAnswered.value = data.questionsAnswered as number
       totalQuestions.value = data.totalQuestions as number
+      questionResults.value = (data.questionResults as QuestionResult[]) ?? []
       phase.value = 'game_over'
       stopCountdown()
       saveState()
@@ -213,23 +231,55 @@ async function handleJoin() {
   phase.value = 'joining'
   nameError.value = ''
 
+  const myName = displayName.value.trim()
+  let joined = false
+  let joinUnsub: (() => void) | null = null
+
   try {
-    const myName = displayName.value.trim()
-    const joinUnsub = await subscribe(joinChannel(), (event: unknown) => {
+    // Subscribe to join channel to receive the response
+    joinUnsub = await subscribe(joinChannel(), (event: unknown) => {
       const data = event as Record<string, unknown>
       if (data.type === 'joined' && data.displayName === myName) {
+        joined = true
         participantId.value = data.participantId as string
         displayName.value = data.displayName as string
         saveState()
-        joinUnsub()
+        if (joinUnsub) joinUnsub()
+        joinUnsub = null
         subscribeToChannels()
       } else if (data.type === 'error') {
+        joined = true // stop retrying
         nameError.value = data.message as string
         phase.value = 'join'
       }
     })
-    unsubscribers.push(joinUnsub)
-    await publish(joinChannel(), [{ action: 'join', displayName: myName }])
+    unsubscribers.push(() => { if (joinUnsub) joinUnsub() })
+
+    // Publish join request with retry — up to 3 attempts, 3s apart
+    for (let attempt = 1; attempt <= 3 && !joined; attempt++) {
+      await publish(joinChannel(), [{ action: 'join', displayName: myName }])
+
+      // Wait up to 5s for the join_ack
+      await new Promise<void>(resolve => {
+        const timeout = setTimeout(() => resolve(), 5000)
+        const check = setInterval(() => {
+          if (joined || phase.value === 'lobby' || phase.value === 'join') {
+            clearTimeout(timeout)
+            clearInterval(check)
+            resolve()
+          }
+        }, 200)
+      })
+
+      if (!joined && attempt < 3) {
+        console.log(`[player] Join attempt ${attempt} timed out, retrying...`)
+      }
+    }
+
+    if (!joined && phase.value === 'joining') {
+      nameError.value = 'Could not connect. Please try again.'
+      phase.value = 'join'
+    }
   } catch (err) {
     console.error('[player] Join failed:', err)
     nameError.value = 'Failed to join. Please try again.'
@@ -326,6 +376,11 @@ const progressPercent = computed(() => {
 
 const optionColors = ['cyan', 'gold', 'emerald', 'rose']
 
+// Report computed
+const correctCount = computed(() => questionResults.value.filter(r => r.isCorrect).length)
+const incorrectCount = computed(() => questionResults.value.filter(r => !r.isCorrect && !r.wasSkipped).length)
+const skippedCount = computed(() => questionResults.value.filter(r => r.wasSkipped).length)
+
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
@@ -340,6 +395,7 @@ onMounted(async () => {
     finalScore.value = stored.finalScore
     questionsAnswered.value = stored.questionsAnswered
     totalQuestions.value = stored.totalQuestions
+    questionResults.value = stored.questionResults ?? []
 
     if (stored.phase === 'game_over') {
       phase.value = 'game_over'
@@ -482,6 +538,45 @@ watch(phase, () => { if (participantId.value) saveState() })
           <div class="go-stat">
             <span class="go-stat-num">{{ totalQuestions }}</span>
             <span class="go-stat-label">total</span>
+          </div>
+        </div>
+
+        <!-- Report summary -->
+        <div v-if="questionResults.length > 0" class="report-summary">
+          <div class="report-pills">
+            <span class="rpill rpill-correct">{{ correctCount }} correct</span>
+            <span class="rpill rpill-wrong">{{ incorrectCount }} wrong</span>
+            <span v-if="skippedCount > 0" class="rpill rpill-skip">{{ skippedCount }} skipped</span>
+          </div>
+          <button class="btn-report" @click="showReport = !showReport">
+            {{ showReport ? 'Hide' : 'Review' }} Answers
+            <span :class="['report-arrow', { open: showReport }]">▾</span>
+          </button>
+        </div>
+
+        <!-- Detailed report -->
+        <div v-if="showReport && questionResults.length > 0" class="report">
+          <div
+            v-for="r in questionResults"
+            :key="r.questionNum"
+            :class="['report-item', { 'ri-correct': r.isCorrect, 'ri-wrong': !r.isCorrect && !r.wasSkipped, 'ri-skip': r.wasSkipped }]"
+          >
+            <div class="ri-header">
+              <span class="ri-num">Q{{ r.questionNum }}</span>
+              <span :class="['ri-badge', `ri-badge-${r.difficulty}`]">{{ r.difficulty }}</span>
+              <span class="ri-pts">{{ r.points }} pts</span>
+              <span class="ri-result">
+                <span v-if="r.isCorrect">✓</span>
+                <span v-else-if="r.wasSkipped">—</span>
+                <span v-else>✗</span>
+              </span>
+            </div>
+            <div class="ri-question">{{ r.questionText }}</div>
+            <div v-if="!r.isCorrect" class="ri-answer">
+              <span v-if="r.selectedOption" class="ri-yours">Your answer: {{ r.selectedOption }}</span>
+              <span v-else class="ri-yours">Skipped</span>
+              <span class="ri-correct-answer">Correct: {{ r.correctAnswer }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -873,7 +968,7 @@ watch(phase, () => { if (participantId.value) saveState() })
   gap: 12px;
   padding: 16px;
   background: var(--bg-card);
-  border: 2px solid var(--border-medium);
+  border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-family: var(--font-display);
@@ -883,6 +978,11 @@ watch(phase, () => { if (participantId.value) saveState() })
   cursor: pointer;
   transition: all 0.15s;
   min-height: 56px;
+}
+
+.opt-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
 }
 
 .opt-btn:active { transform: scale(0.97); }
@@ -898,27 +998,18 @@ watch(phase, () => { if (participantId.value) saveState() })
   font-size: 13px;
   font-weight: 700;
   flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
 }
 
 .opt-text {
   flex: 1;
 }
 
-.opt-cyan { border-left: 4px solid var(--cyan); }
 .opt-cyan .opt-letter { background: var(--cyan-subtle); color: var(--cyan-light); }
-.opt-cyan:hover { border-color: var(--cyan); background: var(--cyan-subtle); }
-
-.opt-gold { border-left: 4px solid var(--gold); }
 .opt-gold .opt-letter { background: var(--gold-subtle); color: var(--gold-light); }
-.opt-gold:hover { border-color: var(--gold); background: var(--gold-subtle); }
-
-.opt-emerald { border-left: 4px solid var(--emerald); }
-.opt-emerald .opt-letter { background: var(--emerald-glow); color: var(--emerald); }
-.opt-emerald:hover { border-color: var(--emerald); background: rgba(16, 185, 129, 0.08); }
-
-.opt-rose { border-left: 4px solid var(--rose); }
+.opt-emerald .opt-letter { background: rgba(16, 185, 129, 0.12); color: var(--emerald); }
 .opt-rose .opt-letter { background: rgba(244, 63, 94, 0.1); color: var(--rose); }
-.opt-rose:hover { border-color: var(--rose); background: rgba(244, 63, 94, 0.06); }
 
 .skip-btn {
   display: block;
@@ -1071,4 +1162,142 @@ watch(phase, () => { if (participantId.value) saveState() })
   .countdown-big { font-size: 88px; }
   .brand-title { font-size: 28px; }
 }
+
+/* ---- Report ---- */
+
+.report-summary {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.report-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.rpill {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 14px;
+  border-radius: var(--radius-full);
+}
+
+.rpill-correct { background: rgba(16, 185, 129, 0.12); color: var(--emerald); }
+.rpill-wrong { background: rgba(244, 63, 94, 0.1); color: var(--rose); }
+.rpill-skip { background: rgba(255, 255, 255, 0.06); color: var(--text-muted); }
+
+.btn-report {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-report:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.report-arrow {
+  font-size: 11px;
+  transition: transform 0.2s;
+}
+
+.report-arrow.open { transform: rotate(180deg); }
+
+.report {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.report-item {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+}
+
+.ri-correct { border-left: 3px solid var(--emerald); }
+.ri-wrong { border-left: 3px solid var(--rose); }
+.ri-skip { border-left: 3px solid var(--text-muted); }
+
+.ri-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ri-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.ri-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  color: #fff;
+}
+
+.ri-badge-easy { background: var(--emerald); }
+.ri-badge-medium { background: var(--gold); color: #0c0a1a; }
+.ri-badge-hard { background: var(--rose); }
+
+.ri-pts {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ri-result {
+  margin-left: auto;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ri-correct .ri-result { color: var(--emerald); }
+.ri-wrong .ri-result { color: var(--rose); }
+.ri-skip .ri-result { color: var(--text-muted); }
+
+.ri-question {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.ri-answer {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.ri-yours { color: var(--rose); }
+.ri-correct-answer { color: var(--emerald); }
 </style>

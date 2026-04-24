@@ -149,6 +149,20 @@ export const handler = withDurableExecution(
     // Step 8: Question loop
     let totalScore = 0;
 
+    // Track per-question results for the post-game report
+    interface QuestionResult {
+      questionNum: number;
+      questionText: string;
+      options: string[];
+      correctAnswer: string;
+      difficulty: string;
+      points: number;
+      selectedOption: string | null;
+      isCorrect: boolean;
+      wasSkipped: boolean;
+    }
+    const questionResults: QuestionResult[] = [];
+
     for (let qIndex = 0; qIndex < questions.length; qIndex++) {
       const question = questions[qIndex];
       const questionNum = qIndex + 1;
@@ -211,6 +225,7 @@ export const handler = withDurableExecution(
                   totalScore,
                   questionsAnswered: qIndex,
                   totalQuestions: questions.length,
+                  questionResults,
                 }],
               });
             });
@@ -269,6 +284,19 @@ export const handler = withDurableExecution(
                   ttl: ttl24h(),
                 },
               }));
+            });
+
+            // Track result for post-game report
+            questionResults.push({
+              questionNum,
+              questionText: question.questionText,
+              options: question.options,
+              correctAnswer: question.correctAnswer,
+              difficulty: question.difficulty,
+              points,
+              selectedOption: response.selectedOption ?? null,
+              isCorrect,
+              wasSkipped: response.action === 'skip',
             });
 
             questionComplete = true;
@@ -341,6 +369,19 @@ export const handler = withDurableExecution(
                     },
                   }));
                 });
+
+                questionResults.push({
+                  questionNum,
+                  questionText: question.questionText,
+                  options: question.options,
+                  correctAnswer: question.correctAnswer,
+                  difficulty: question.difficulty,
+                  points: 0,
+                  selectedOption: null,
+                  isCorrect: false,
+                  wasSkipped: true,
+                });
+
                 questionComplete = true;
               }
 
@@ -363,6 +404,7 @@ export const handler = withDurableExecution(
                       totalScore,
                       questionsAnswered: qIndex,
                       totalQuestions: questions.length,
+                      questionResults,
                     }],
                   });
                 });
@@ -389,6 +431,19 @@ export const handler = withDurableExecution(
                     },
                   }));
                 });
+
+                questionResults.push({
+                  questionNum,
+                  questionText: question.questionText,
+                  options: question.options,
+                  correctAnswer: question.correctAnswer,
+                  difficulty: question.difficulty,
+                  points: 0,
+                  selectedOption: null,
+                  isCorrect: false,
+                  wasSkipped: true,
+                });
+
                 questionComplete = true;
               } else {
                 throw innerError;
@@ -421,6 +476,7 @@ export const handler = withDurableExecution(
           totalScore,
           questionsAnswered: questions.length,
           totalQuestions: questions.length,
+          questionResults,
         }],
       });
     });
