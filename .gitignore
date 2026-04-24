@@ -29,3 +29,7 @@ Thumbs.db
 
 # SAM config (contains profile/region preferences)
 samconfig.toml
+
+# Dev/test scripts
+scripts/kill-durable.mjs
+scripts/test-*.mjs

@@ -153,26 +153,11 @@ This watches for file changes and deploys automatically. Durable function change
 
 ### Managing durable executions
 
-Kill all running durable executions (useful during development):
+During development, you may need to stop running durable executions:
 
 ```bash
-cd scripts
-node kill-durable.mjs
-```
-
-### Running tests
-
-End-to-end flow test (creates game, joins, starts, answers a question):
-
-```bash
-node scripts/test-full-flow.mjs
-```
-
-Test cancel and timeout:
-
-```bash
-node scripts/test-cancel.mjs cancel   # Test host cancel
-node scripts/test-cancel.mjs timeout  # Test timer expiry
+# List and stop via SAM CLI
+sam remote execution stop <execution-arn>
 ```
 
 ## Game Flow
@@ -223,9 +208,7 @@ trivia/
 │   │   └── main.ts
 │   └── .env.example
 └── scripts/
-    ├── seed.ts                 # Seed QuestionsTable
-    ├── kill-durable.mjs        # Stop running durable executions
-    └── test-*.mjs              # Integration tests
+    └── seed.ts                 # Seed QuestionsTable
 ```
 
 Each Lambda function is fully self-contained with its own dependencies. Shared utilities are copied into each function's `shared/` directory and bundled by esbuild.
