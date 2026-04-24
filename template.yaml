@@ -1,0 +1,446 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Trivia Game v2 - Real-time multiplayer trivia with AppSync Events and durable functions
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures:
+      - arm64
+    MemorySize: 512
+    Timeout: 30
+    Tracing: Active
+    Environment:
+      Variables:
+        GAME_TABLE_NAME: !Ref GameTable
+        QUESTIONS_TABLE_NAME: !Ref QuestionsTable
+        APPSYNC_HTTP_ENDPOINT: !GetAtt TriviaEventsApi.Dns.Http
+        APPSYNC_REALTIME_ENDPOINT: !GetAtt TriviaEventsApi.Dns.Realtime
+        APPSYNC_API_KEY: !GetAtt TriviaEventsApiKey.ApiKey
+
+Resources:
+  # ============================================================
+  # DynamoDB Tables
+  # ============================================================
+
+  QuestionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-questions
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  GameTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-game
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  # ============================================================
+  # AppSync Events API
+  # ============================================================
+
+  TriviaEventsApi:
+    Type: AWS::AppSync::Api
+    Properties:
+      Name: !Sub ${AWS::StackName}-events
+      EventConfig:
+        AuthProviders:
+          - AuthType: API_KEY
+        ConnectionAuthModes:
+          - AuthType: API_KEY
+        DefaultPublishAuthModes:
+          - AuthType: API_KEY
+        DefaultSubscribeAuthModes:
+          - AuthType: API_KEY
+        LogConfig:
+          CloudWatchLogsRoleArn: !GetAtt AppSyncLogsRole.Arn
+          LogLevel: ERROR
+
+  TriviaEventsApiKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId: !GetAtt TriviaEventsApi.ApiId
+      Expires: 1808587200  # 2027-04-24 — rotate before expiry
+
+  AppSyncLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: appsync.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppSyncPushToCloudWatchLogs
+
+  # --- AppSync Data Sources (Lambda) ---
+
+  AppSyncLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: appsync.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AppSyncInvokeLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !GetAtt SessionHandlerFunction.Arn
+                  - !GetAtt ParticipantManagerFunction.Arn
+
+  SessionHandlerDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt TriviaEventsApi.ApiId
+      Name: SessionHandlerDS
+      Type: AWS_LAMBDA
+      ServiceRoleArn: !GetAtt AppSyncLambdaRole.Arn
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt SessionHandlerFunction.Arn
+
+  ParticipantManagerDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt TriviaEventsApi.ApiId
+      Name: ParticipantManagerDS
+      Type: AWS_LAMBDA
+      ServiceRoleArn: !GetAtt AppSyncLambdaRole.Arn
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt ParticipantManagerFunction.Arn
+
+  # --- Channel Namespaces ---
+
+  AdminNamespace:
+    Type: AWS::AppSync::ChannelNamespace
+    DependsOn:
+      - SessionHandlerDataSource
+    Properties:
+      ApiId: !GetAtt TriviaEventsApi.ApiId
+      Name: admin
+      PublishAuthModes:
+        - AuthType: API_KEY
+      SubscribeAuthModes:
+        - AuthType: API_KEY
+      HandlerConfigs:
+        OnPublish:
+          Behavior: DIRECT
+          Integration:
+            DataSourceName: SessionHandlerDS
+            LambdaConfig:
+              InvokeType: REQUEST_RESPONSE
+        OnSubscribe:
+          Behavior: DIRECT
+          Integration:
+            DataSourceName: SessionHandlerDS
+            LambdaConfig:
+              InvokeType: REQUEST_RESPONSE
+
+  LeaderboardNamespace:
+    Type: AWS::AppSync::ChannelNamespace
+    DependsOn:
+      - SessionHandlerDataSource
+    Properties:
+      ApiId: !GetAtt TriviaEventsApi.ApiId
+      Name: leaderboard
+      PublishAuthModes:
+        - AuthType: API_KEY
+      SubscribeAuthModes:
+        - AuthType: API_KEY
+      HandlerConfigs:
+        OnSubscribe:
+          Behavior: DIRECT
+          Integration:
+            DataSourceName: SessionHandlerDS
+            LambdaConfig:
+              InvokeType: REQUEST_RESPONSE
+
+  PlayerNamespace:
+    Type: AWS::AppSync::ChannelNamespace
+    DependsOn:
+      - ParticipantManagerDataSource
+    Properties:
+      ApiId: !GetAtt TriviaEventsApi.ApiId
+      Name: player
+      PublishAuthModes:
+        - AuthType: API_KEY
+      SubscribeAuthModes:
+        - AuthType: API_KEY
+      HandlerConfigs:
+        OnPublish:
+          Behavior: DIRECT
+          Integration:
+            DataSourceName: ParticipantManagerDS
+            LambdaConfig:
+              InvokeType: REQUEST_RESPONSE
+
+  GameNamespace:
+    Type: AWS::AppSync::ChannelNamespace
+    Properties:
+      ApiId: !GetAtt TriviaEventsApi.ApiId
+      Name: game
+      PublishAuthModes:
+        - AuthType: API_KEY
+      SubscribeAuthModes:
+        - AuthType: API_KEY
+
+  # ============================================================
+  # Lambda Functions
+  # ============================================================
+
+  # 1. Session Handler (Standard Lambda)
+  SessionHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-session-handler
+      Description: Handles admin commands (create, start, cancel) and state reconstruction on subscribe
+      Handler: index.handler
+      CodeUri: functions/session-handler/
+      Timeout: 30
+      Environment:
+        Variables:
+          ODF_FUNCTION_ARN: !Ref SessionOrchestratorFunction.Alias
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QuestionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SessionOrchestratorFunction
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - lambda:SendDurableExecutionCallbackSuccess
+                - lambda:SendDurableExecutionCallbackFailure
+              Resource:
+                - !GetAtt SessionOrchestratorFunction.Arn
+                - !Sub ${SessionOrchestratorFunction.Arn}:*
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - index.ts
+        External: []
+
+  # 2. Participant Manager (Standard Lambda)
+  ParticipantManagerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-participant-manager
+      Description: Handles player join, routes answer/skip/more_time callbacks to PODs
+      Handler: index.handler
+      CodeUri: functions/participant-manager/
+      Timeout: 30
+      Environment:
+        Variables:
+          POD_FUNCTION_ARN: !Ref ParticipantOrchestratorFunction.Alias
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ParticipantOrchestratorFunction
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - lambda:SendDurableExecutionCallbackSuccess
+                - lambda:SendDurableExecutionCallbackFailure
+              Resource:
+                - !GetAtt ParticipantOrchestratorFunction.Arn
+                - !Sub ${ParticipantOrchestratorFunction.Arn}:*
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - index.ts
+        External: []
+
+  # 3. Session Orchestrator / ODF (Durable Function)
+  SessionOrchestratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-session-odf
+      Description: Durable function orchestrating game lifecycle (create, start, cancel, timeout, end)
+      Handler: index.handler
+      CodeUri: functions/session-orchestrator/
+      Timeout: 900
+      DurableConfig:
+        ExecutionTimeout: 86400
+        RetentionPeriodInDays: 1
+      AutoPublishAlias: live
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QuestionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameTable
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicDurableExecutionRolePolicy
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ParticipantOrchestratorFunction
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - lambda:SendDurableExecutionCallbackSuccess
+                - lambda:SendDurableExecutionCallbackFailure
+              Resource:
+                - !GetAtt ParticipantOrchestratorFunction.Arn
+                - !Sub ${ParticipantOrchestratorFunction.Arn}:*
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - index.ts
+        External: []
+
+  # 4. Participant Orchestrator / POD (Durable Function)
+  ParticipantOrchestratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-participant-pod
+      Description: Durable function orchestrating per-player question delivery, scoring, and activity logging
+      Handler: index.handler
+      CodeUri: functions/participant-orchestrator/
+      Timeout: 900
+      DurableConfig:
+        ExecutionTimeout: 86400
+        RetentionPeriodInDays: 1
+      AutoPublishAlias: live
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameTable
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicDurableExecutionRolePolicy
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - index.ts
+        External: []
+
+  # 5. Stream Handler (Standard Lambda — DDB Streams trigger)
+  StreamHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-stream-handler
+      Description: Reacts to GameTable DDB Streams for leaderboard updates
+      Handler: index.handler
+      CodeUri: functions/stream-handler/
+      Timeout: 30
+      Events:
+        GameTableStream:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt GameTable.StreamArn
+            StartingPosition: TRIM_HORIZON
+            BatchSize: 10
+            MaximumRetryAttempts: 3
+            BisectBatchOnFunctionError: true
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameTable
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - index.ts
+        External: []
+
+# ============================================================
+# Outputs
+# ============================================================
+
+Outputs:
+  AppSyncHttpEndpoint:
+    Description: AppSync Events HTTP endpoint for publishing
+    Value: !Sub https://${TriviaEventsApi.Dns.Http}/event
+
+  AppSyncRealtimeEndpoint:
+    Description: AppSync Events WebSocket endpoint for subscriptions
+    Value: !Sub wss://${TriviaEventsApi.Dns.Realtime}/event/realtime
+
+  AppSyncApiKey:
+    Description: AppSync Events API key
+    Value: !GetAtt TriviaEventsApiKey.ApiKey
+
+  QuestionsTableName:
+    Description: DynamoDB Questions table name
+    Value: !Ref QuestionsTable
+
+  GameTableName:
+    Description: DynamoDB Game table name
+    Value: !Ref GameTable
+
+  SessionHandlerArn:
+    Description: Session Handler Lambda ARN
+    Value: !GetAtt SessionHandlerFunction.Arn
+
+  ParticipantManagerArn:
+    Description: Participant Manager Lambda ARN
+    Value: !GetAtt ParticipantManagerFunction.Arn
+
+  SessionOrchestratorAlias:
+    Description: Session Orchestrator (ODF) alias ARN
+    Value: !Ref SessionOrchestratorFunction.Alias
+
+  ParticipantOrchestratorAlias:
+    Description: Participant Orchestrator (POD) alias ARN
+    Value: !Ref ParticipantOrchestratorFunction.Alias
+
+  StreamHandlerArn:
+    Description: Stream Handler Lambda ARN
+    Value: !GetAtt StreamHandlerFunction.Arn
