@@ -6,31 +6,59 @@ All communication flows through AppSync Events (WebSocket) — no API Gateway.
 
 ## Architecture
 
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  Admin UI    │────▶│  AppSync     │────▶│ Session Handler  │
-│  /controller │◀────│  Events      │     │ (Standard Lambda)│
-└─────────────┘     │              │     └────────┬────────┘
-                    │  admin/      │              │ async invoke
-┌─────────────┐     │  leaderboard/│     ┌────────▼────────┐
-│ Leaderboard  │◀───│  player/     │     │ Session ODF      │
-│ /leaderboard │     │  game/       │     │ (Durable Function)│
-└─────────────┘     │              │     └─────────────────┘
-                    │              │
-┌─────────────┐     │              │     ┌──────────────────┐
-│ Player UI    │────▶│              │────▶│ Participant Mgr   │
-│ /play/:id    │◀────│              │     │ (Standard Lambda) │
-└─────────────┘     └──────┬───────┘     └────────┬─────────┘
-                           │                      │ async invoke
-                    ┌──────▼───────┐     ┌────────▼─────────┐
-                    │  GameTable   │     │ Participant POD    │
-                    │  (DDB+Stream)│────▶│ (Durable Function) │
-                    └──────┬───────┘     └──────────────────┘
-                           │
-                    ┌──────▼───────┐
-                    │ Stream Handler│
-                    │ (Standard λ) │
-                    └──────────────┘
+```mermaid
+graph LR
+    subgraph Clients
+        Admin["Admin UI<br/>/controller"]
+        Player["Player UI<br/>/play/:id"]
+        LB["Leaderboard<br/>/leaderboard/:id"]
+    end
+
+    subgraph AppSync["AppSync Events"]
+        AC["admin/"]
+        LC["leaderboard/"]
+        PC["player/"]
+        GC["game/"]
+    end
+
+    subgraph Lambda
+        SH["Session Handler<br/>(Standard)"]
+        PM["Participant Mgr<br/>(Standard)"]
+        ODF["Session ODF<br/>(Durable)"]
+        POD["Participant POD<br/>(Durable)"]
+        STR["Stream Handler<br/>(Standard)"]
+    end
+
+    subgraph Data
+        GT[("GameTable<br/>DDB + Streams")]
+        QT[("QuestionsTable<br/>DDB")]
+    end
+
+    Admin -->|publish| AC
+    AC -->|onPublish| SH
+    AC -->|onSubscribe| SH
+    Player -->|publish| PC
+    PC -->|onPublish| PM
+    LB -->|subscribe| LC
+    LC -->|onSubscribe| SH
+
+    Admin ---|subscribe| GC
+    Player ---|subscribe| GC
+    LB ---|subscribe| GC
+
+    SH -->|async invoke| ODF
+    PM -->|async invoke| POD
+    ODF -->|callback| POD
+    ODF -->|publish| GC
+    POD -->|publish| PC
+
+    ODF --> GT
+    ODF --> QT
+    POD --> GT
+    SH --> GT
+    SH --> QT
+    GT -->|DDB Streams| STR
+    STR -->|publish| LC
 ```
 
 ### Lambda Functions
