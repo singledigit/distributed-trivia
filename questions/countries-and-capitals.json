@@ -1,0 +1,661 @@
+{
+  "categoryName": "Countries and Capitals",
+  "questions": [
+    {
+      "questionText": "What is the capital of Japan?",
+      "options": [
+        "Osaka",
+        "Tokyo",
+        "Kyoto",
+        "Hiroshima"
+      ],
+      "correctAnswer": "Tokyo",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of France?",
+      "options": [
+        "Lyon",
+        "Marseille",
+        "Paris",
+        "Nice"
+      ],
+      "correctAnswer": "Paris",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of the United States?",
+      "options": [
+        "New York City",
+        "Los Angeles",
+        "Washington, D.C.",
+        "Chicago"
+      ],
+      "correctAnswer": "Washington, D.C.",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Germany?",
+      "options": [
+        "Munich",
+        "Berlin",
+        "Hamburg",
+        "Frankfurt"
+      ],
+      "correctAnswer": "Berlin",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Australia?",
+      "options": [
+        "Sydney",
+        "Melbourne",
+        "Canberra",
+        "Brisbane"
+      ],
+      "correctAnswer": "Canberra",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of China?",
+      "options": [
+        "Shanghai",
+        "Beijing",
+        "Hong Kong",
+        "Shenzhen"
+      ],
+      "correctAnswer": "Beijing",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Brazil?",
+      "options": [
+        "Rio de Janeiro",
+        "São Paulo",
+        "Brasília",
+        "Salvador"
+      ],
+      "correctAnswer": "Brasília",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Canada?",
+      "options": [
+        "Toronto",
+        "Vancouver",
+        "Ottawa",
+        "Montreal"
+      ],
+      "correctAnswer": "Ottawa",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of India?",
+      "options": [
+        "Mumbai",
+        "Kolkata",
+        "New Delhi",
+        "Bangalore"
+      ],
+      "correctAnswer": "New Delhi",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Italy?",
+      "options": [
+        "Milan",
+        "Rome",
+        "Venice",
+        "Naples"
+      ],
+      "correctAnswer": "Rome",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Russia?",
+      "options": [
+        "St. Petersburg",
+        "Moscow",
+        "Novosibirsk",
+        "Kazan"
+      ],
+      "correctAnswer": "Moscow",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Spain?",
+      "options": [
+        "Barcelona",
+        "Seville",
+        "Madrid",
+        "Valencia"
+      ],
+      "correctAnswer": "Madrid",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Egypt?",
+      "options": [
+        "Alexandria",
+        "Cairo",
+        "Luxor",
+        "Giza"
+      ],
+      "correctAnswer": "Cairo",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Mexico?",
+      "options": [
+        "Cancún",
+        "Guadalajara",
+        "Mexico City",
+        "Monterrey"
+      ],
+      "correctAnswer": "Mexico City",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of South Korea?",
+      "options": [
+        "Busan",
+        "Incheon",
+        "Daegu",
+        "Seoul"
+      ],
+      "correctAnswer": "Seoul",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of the United Kingdom?",
+      "options": [
+        "Manchester",
+        "Edinburgh",
+        "London",
+        "Birmingham"
+      ],
+      "correctAnswer": "London",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Argentina?",
+      "options": [
+        "Córdoba",
+        "Buenos Aires",
+        "Rosario",
+        "Mendoza"
+      ],
+      "correctAnswer": "Buenos Aires",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Turkey?",
+      "options": [
+        "Istanbul",
+        "Ankara",
+        "Izmir",
+        "Antalya"
+      ],
+      "correctAnswer": "Ankara",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Kenya?",
+      "options": [
+        "Mombasa",
+        "Nairobi",
+        "Kisumu",
+        "Nakuru"
+      ],
+      "correctAnswer": "Nairobi",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Thailand?",
+      "options": [
+        "Chiang Mai",
+        "Phuket",
+        "Bangkok",
+        "Pattaya"
+      ],
+      "correctAnswer": "Bangkok",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the capital of Nigeria?",
+      "options": [
+        "Lagos",
+        "Abuja",
+        "Kano",
+        "Port Harcourt"
+      ],
+      "correctAnswer": "Abuja",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Mongolia?",
+      "options": [
+        "Darkhan",
+        "Erdenet",
+        "Ulaanbaatar",
+        "Choibalsan"
+      ],
+      "correctAnswer": "Ulaanbaatar",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of New Zealand?",
+      "options": [
+        "Auckland",
+        "Christchurch",
+        "Wellington",
+        "Queenstown"
+      ],
+      "correctAnswer": "Wellington",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Vietnam?",
+      "options": [
+        "Ho Chi Minh City",
+        "Hanoi",
+        "Da Nang",
+        "Hue"
+      ],
+      "correctAnswer": "Hanoi",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Morocco?",
+      "options": [
+        "Casablanca",
+        "Marrakech",
+        "Rabat",
+        "Fez"
+      ],
+      "correctAnswer": "Rabat",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Peru?",
+      "options": [
+        "Cusco",
+        "Arequipa",
+        "Lima",
+        "Trujillo"
+      ],
+      "correctAnswer": "Lima",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Pakistan?",
+      "options": [
+        "Karachi",
+        "Lahore",
+        "Islamabad",
+        "Rawalpindi"
+      ],
+      "correctAnswer": "Islamabad",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Ethiopia?",
+      "options": [
+        "Dire Dawa",
+        "Addis Ababa",
+        "Gondar",
+        "Mekelle"
+      ],
+      "correctAnswer": "Addis Ababa",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Kazakhstan?",
+      "options": [
+        "Almaty",
+        "Astana",
+        "Shymkent",
+        "Karaganda"
+      ],
+      "correctAnswer": "Astana",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Colombia?",
+      "options": [
+        "Medellín",
+        "Cartagena",
+        "Cali",
+        "Bogotá"
+      ],
+      "correctAnswer": "Bogotá",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Iceland's capital, Reykjavik, holds which geographical distinction?",
+      "options": [
+        "Smallest capital by population",
+        "Northernmost capital of a sovereign state",
+        "Coldest capital city",
+        "Oldest continuously inhabited capital"
+      ],
+      "correctAnswer": "Northernmost capital of a sovereign state",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of the Ivory Coast (Côte d'Ivoire)?",
+      "options": [
+        "Abidjan",
+        "Bouaké",
+        "Yamoussoukro",
+        "Daloa"
+      ],
+      "correctAnswer": "Yamoussoukro",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Myanmar?",
+      "options": [
+        "Yangon",
+        "Mandalay",
+        "Naypyidaw",
+        "Bago"
+      ],
+      "correctAnswer": "Naypyidaw",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Tanzania?",
+      "options": [
+        "Dar es Salaam",
+        "Dodoma",
+        "Arusha",
+        "Mwanza"
+      ],
+      "correctAnswer": "Dodoma",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Belize?",
+      "options": [
+        "Belize City",
+        "Belmopan",
+        "San Ignacio",
+        "Orange Walk"
+      ],
+      "correctAnswer": "Belmopan",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Wellington, New Zealand, holds which geographical record?",
+      "options": [
+        "Windiest capital city",
+        "Southernmost capital of a sovereign state",
+        "Smallest island capital",
+        "Youngest capital city"
+      ],
+      "correctAnswer": "Southernmost capital of a sovereign state",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Suriname?",
+      "options": [
+        "Nieuw Nickerie",
+        "Paramaribo",
+        "Lelydorp",
+        "Albina"
+      ],
+      "correctAnswer": "Paramaribo",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Madagascar?",
+      "options": [
+        "Toamasina",
+        "Antananarivo",
+        "Mahajanga",
+        "Fianarantsoa"
+      ],
+      "correctAnswer": "Antananarivo",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the capital of Malta?",
+      "options": [
+        "Mdina",
+        "Valletta",
+        "Sliema",
+        "Rabat"
+      ],
+      "correctAnswer": "Valletta",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "True or False: Canberra was chosen as Australia's capital as a compromise between the rival cities of Sydney and Melbourne.",
+      "options": [
+        "True",
+        "False"
+      ],
+      "correctAnswer": "True",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "South Africa is the only country with three capital cities. Which city serves as the judicial capital?",
+      "options": [
+        "Pretoria",
+        "Cape Town",
+        "Bloemfontein",
+        "Johannesburg"
+      ],
+      "correctAnswer": "Bloemfontein",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the capital of Liechtenstein?",
+      "options": [
+        "Schaan",
+        "Vaduz",
+        "Balzers",
+        "Triesen"
+      ],
+      "correctAnswer": "Vaduz",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the official capital (legislative capital) of Sri Lanka?",
+      "options": [
+        "Colombo",
+        "Kandy",
+        "Sri Jayawardenepura Kotte",
+        "Galle"
+      ],
+      "correctAnswer": "Sri Jayawardenepura Kotte",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the capital of the Federated States of Micronesia?",
+      "options": [
+        "Weno",
+        "Palikir",
+        "Kolonia",
+        "Tofol"
+      ],
+      "correctAnswer": "Palikir",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the capital of Palau?",
+      "options": [
+        "Koror",
+        "Ngerulmud",
+        "Melekeok",
+        "Airai"
+      ],
+      "correctAnswer": "Ngerulmud",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the capital of Bhutan?",
+      "options": [
+        "Paro",
+        "Thimphu",
+        "Punakha",
+        "Phuntsholing"
+      ],
+      "correctAnswer": "Thimphu",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Bolivia has two capitals. Sucre is the constitutional capital. What is the other, which serves as the seat of the executive and legislative branches?",
+      "options": [
+        "Cochabamba",
+        "Santa Cruz",
+        "La Paz",
+        "Oruro"
+      ],
+      "correctAnswer": "La Paz",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the capital of Eritrea?",
+      "options": [
+        "Massawa",
+        "Keren",
+        "Asmara",
+        "Assab"
+      ],
+      "correctAnswer": "Asmara",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the capital of Andorra?",
+      "options": [
+        "Encamp",
+        "Andorra la Vella",
+        "La Massana",
+        "Ordino"
+      ],
+      "correctAnswer": "Andorra la Vella",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the capital of Tuvalu?",
+      "options": [
+        "Funafuti",
+        "Nanumea",
+        "Vaitupu",
+        "Nukufetau"
+      ],
+      "correctAnswer": "Funafuti",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What city was the capital of Turkey before Ankara?",
+      "options": [
+        "Izmir",
+        "Bursa",
+        "Istanbul (Constantinople)",
+        "Antalya"
+      ],
+      "correctAnswer": "Istanbul (Constantinople)",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "True or False: Nauru has no official capital city, but government offices are located in the district of Yaren.",
+      "options": [
+        "True",
+        "False"
+      ],
+      "correctAnswer": "True",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the capital of Comoros?",
+      "options": [
+        "Mutsamudu",
+        "Moroni",
+        "Fomboni",
+        "Domoni"
+      ],
+      "correctAnswer": "Moroni",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Eswatini (formerly Swaziland) has two capitals. Mbabane is the administrative capital. What is the legislative (royal) capital?",
+      "options": [
+        "Manzini",
+        "Lobamba",
+        "Siteki",
+        "Nhlangano"
+      ],
+      "correctAnswer": "Lobamba",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "La Paz, Bolivia, holds which geographical record among world capitals?",
+      "options": [
+        "Largest capital by area",
+        "Highest administrative capital in the world",
+        "Most remote capital from any ocean",
+        "Driest capital city"
+      ],
+      "correctAnswer": "Highest administrative capital in the world",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the capital of Brunei?",
+      "options": [
+        "Seria",
+        "Tutong",
+        "Bandar Seri Begawan",
+        "Temburong"
+      ],
+      "correctAnswer": "Bandar Seri Begawan",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the political capital of Burundi, changed from Bujumbura in 2019?",
+      "options": [
+        "Gitega",
+        "Ngozi",
+        "Rumonge",
+        "Muyinga"
+      ],
+      "correctAnswer": "Gitega",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the capital of the Marshall Islands?",
+      "options": [
+        "Ebeye",
+        "Majuro",
+        "Jaluit",
+        "Kwajalein"
+      ],
+      "correctAnswer": "Majuro",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Which European microstate has the City of San Marino as its capital?",
+      "options": [
+        "Monaco",
+        "San Marino",
+        "Liechtenstein",
+        "Andorra"
+      ],
+      "correctAnswer": "San Marino",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Ulaanbaatar, the capital of Mongolia, is known for being the world's what?",
+      "options": [
+        "Highest capital by elevation",
+        "Coldest capital city by average yearly temperature",
+        "Most landlocked capital",
+        "Least densely populated capital"
+      ],
+      "correctAnswer": "Coldest capital city by average yearly temperature",
+      "difficulty": "hard"
+    }
+  ]
+}

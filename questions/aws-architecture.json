@@ -1,0 +1,659 @@
+{
+  "categoryName": "AWS Architecture",
+  "questions": [
+    {
+      "questionText": "Which AWS service is used for object storage?",
+      "options": [
+        "Amazon EBS",
+        "Amazon S3",
+        "Amazon EFS",
+        "Amazon Glacier"
+      ],
+      "correctAnswer": "Amazon S3",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What does EC2 stand for in AWS?",
+      "options": [
+        "Elastic Cloud Compute",
+        "Elastic Compute Cloud",
+        "Enterprise Compute Cloud",
+        "Elastic Container Cloud"
+      ],
+      "correctAnswer": "Elastic Compute Cloud",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which AWS service provides a managed relational database?",
+      "options": [
+        "Amazon DynamoDB",
+        "Amazon RDS",
+        "Amazon ElastiCache",
+        "Amazon Redshift"
+      ],
+      "correctAnswer": "Amazon RDS",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is Amazon CloudFront?",
+      "options": [
+        "A compute service",
+        "A content delivery network (CDN)",
+        "A database service",
+        "A monitoring service"
+      ],
+      "correctAnswer": "A content delivery network (CDN)",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which AWS service is a fully managed NoSQL database?",
+      "options": [
+        "Amazon RDS",
+        "Amazon Aurora",
+        "Amazon DynamoDB",
+        "Amazon Neptune"
+      ],
+      "correctAnswer": "Amazon DynamoDB",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What does IAM stand for in AWS?",
+      "options": [
+        "Internet Access Management",
+        "Identity and Access Management",
+        "Infrastructure and Application Management",
+        "Integrated Account Management"
+      ],
+      "correctAnswer": "Identity and Access Management",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which AWS service provides serverless compute for running code without provisioning servers?",
+      "options": [
+        "Amazon EC2",
+        "AWS Lambda",
+        "Amazon ECS",
+        "AWS Batch"
+      ],
+      "correctAnswer": "AWS Lambda",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What does VPC stand for in AWS?",
+      "options": [
+        "Virtual Public Cloud",
+        "Virtual Private Cloud",
+        "Virtual Protected Cluster",
+        "Virtual Private Container"
+      ],
+      "correctAnswer": "Virtual Private Cloud",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which AWS service is a managed message queue?",
+      "options": [
+        "Amazon SNS",
+        "Amazon SQS",
+        "Amazon Kinesis",
+        "Amazon MQ"
+      ],
+      "correctAnswer": "Amazon SQS",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Amazon SNS is a publish/subscribe messaging service.",
+      "options": [
+        "True",
+        "False"
+      ],
+      "correctAnswer": "True",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which AWS service provides managed DNS?",
+      "options": [
+        "Amazon CloudFront",
+        "Amazon Route 53",
+        "AWS Direct Connect",
+        "Amazon VPC"
+      ],
+      "correctAnswer": "Amazon Route 53",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "How many pillars does the AWS Well-Architected Framework have?",
+      "options": [
+        "4",
+        "5",
+        "6",
+        "7"
+      ],
+      "correctAnswer": "6",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which AWS service distributes incoming traffic across multiple targets like EC2 instances?",
+      "options": [
+        "Amazon Route 53",
+        "AWS Auto Scaling",
+        "Elastic Load Balancing",
+        "Amazon CloudFront"
+      ],
+      "correctAnswer": "Elastic Load Balancing",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "In the AWS Shared Responsibility Model, who is responsible for patching the guest operating system on EC2 instances?",
+      "options": [
+        "AWS",
+        "The customer",
+        "Both AWS and the customer equally",
+        "Neither"
+      ],
+      "correctAnswer": "The customer",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which AWS service automatically adjusts compute capacity to maintain steady performance?",
+      "options": [
+        "Elastic Load Balancing",
+        "AWS Auto Scaling",
+        "Amazon CloudWatch",
+        "AWS Config"
+      ],
+      "correctAnswer": "AWS Auto Scaling",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "AWS regions are made up of multiple isolated locations called what?",
+      "options": [
+        "Data centers",
+        "Availability Zones",
+        "Edge locations",
+        "Local zones"
+      ],
+      "correctAnswer": "Availability Zones",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which AWS service lets you run containers without managing servers or clusters?",
+      "options": [
+        "Amazon ECS on EC2",
+        "Amazon EKS on EC2",
+        "AWS Fargate",
+        "AWS Batch"
+      ],
+      "correctAnswer": "AWS Fargate",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Amazon S3 stores data as objects in containers called what?",
+      "options": [
+        "Volumes",
+        "Buckets",
+        "Tables",
+        "Folders"
+      ],
+      "correctAnswer": "Buckets",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "Which service is used to monitor AWS resources and set alarms?",
+      "options": [
+        "AWS CloudTrail",
+        "Amazon CloudWatch",
+        "AWS Config",
+        "AWS X-Ray"
+      ],
+      "correctAnswer": "Amazon CloudWatch",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "A VPC spans all Availability Zones within a single AWS Region.",
+      "options": [
+        "True",
+        "False"
+      ],
+      "correctAnswer": "True",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the maximum execution timeout for an AWS Lambda function?",
+      "options": [
+        "5 minutes",
+        "10 minutes",
+        "15 minutes",
+        "30 minutes"
+      ],
+      "correctAnswer": "15 minutes",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which pillar of the AWS Well-Architected Framework was added most recently?",
+      "options": [
+        "Security",
+        "Cost Optimization",
+        "Sustainability",
+        "Reliability"
+      ],
+      "correctAnswer": "Sustainability",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the maximum message retention period for Amazon SQS?",
+      "options": [
+        "7 days",
+        "14 days",
+        "30 days",
+        "90 days"
+      ],
+      "correctAnswer": "14 days",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which type of Elastic Load Balancer operates at Layer 7 (application layer) and supports path-based routing?",
+      "options": [
+        "Classic Load Balancer",
+        "Network Load Balancer",
+        "Application Load Balancer",
+        "Gateway Load Balancer"
+      ],
+      "correctAnswer": "Application Load Balancer",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "In Amazon DynamoDB, what is the maximum size of a single item?",
+      "options": [
+        "64 KB",
+        "256 KB",
+        "400 KB",
+        "1 MB"
+      ],
+      "correctAnswer": "400 KB",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What does Amazon RDS Multi-AZ deployment provide?",
+      "options": [
+        "Read scalability with multiple read endpoints",
+        "Automatic failover to a standby instance in a different Availability Zone",
+        "Cross-region replication for disaster recovery",
+        "Reduced storage costs through data deduplication"
+      ],
+      "correctAnswer": "Automatic failover to a standby instance in a different Availability Zone",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which Route 53 routing policy sends traffic to the AWS region that provides the lowest latency for the user?",
+      "options": [
+        "Weighted routing",
+        "Failover routing",
+        "Latency-based routing",
+        "Geolocation routing"
+      ],
+      "correctAnswer": "Latency-based routing",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the maximum amount of memory you can allocate to a single AWS Lambda function?",
+      "options": [
+        "3,008 MB",
+        "5,120 MB",
+        "10,240 MB",
+        "16,384 MB"
+      ],
+      "correctAnswer": "10,240 MB",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which S3 storage class automatically moves data between access tiers to optimize cost?",
+      "options": [
+        "S3 Standard",
+        "S3 Standard-IA",
+        "S3 Intelligent-Tiering",
+        "S3 One Zone-IA"
+      ],
+      "correctAnswer": "S3 Intelligent-Tiering",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "In the AWS Shared Responsibility Model, who is responsible for the physical security of data centers?",
+      "options": [
+        "The customer",
+        "AWS",
+        "A third-party auditor",
+        "Shared between AWS and the customer"
+      ],
+      "correctAnswer": "AWS",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the key difference between a VPC Security Group and a Network ACL (NACL)?",
+      "options": [
+        "Security Groups are stateless; NACLs are stateful",
+        "Security Groups operate at the instance level; NACLs operate at the subnet level",
+        "Security Groups only support allow rules; NACLs only support deny rules",
+        "Security Groups apply to a single AZ; NACLs apply to the entire VPC"
+      ],
+      "correctAnswer": "Security Groups operate at the instance level; NACLs operate at the subnet level",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which AWS disaster recovery strategy has the lowest RTO and RPO but the highest cost?",
+      "options": [
+        "Backup and Restore",
+        "Pilot Light",
+        "Warm Standby",
+        "Multi-Site Active/Active"
+      ],
+      "correctAnswer": "Multi-Site Active/Active",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What type of queue does Amazon SQS FIFO provide compared to standard queues?",
+      "options": [
+        "Higher throughput with best-effort ordering",
+        "Exactly-once processing and strict message ordering",
+        "Automatic dead-letter queue routing",
+        "Unlimited message retention"
+      ],
+      "correctAnswer": "Exactly-once processing and strict message ordering",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Each subnet in a VPC must reside entirely within one Availability Zone.",
+      "options": [
+        "True",
+        "False"
+      ],
+      "correctAnswer": "True",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which AWS service provides a serverless event bus for routing events between applications using content-based filtering rules?",
+      "options": [
+        "Amazon SNS",
+        "Amazon SQS",
+        "Amazon EventBridge",
+        "AWS Step Functions"
+      ],
+      "correctAnswer": "Amazon EventBridge",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the maximum object size you can upload in a single PUT request to Amazon S3?",
+      "options": [
+        "1 GB",
+        "5 GB",
+        "10 GB",
+        "50 GB"
+      ],
+      "correctAnswer": "5 GB",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which AWS service lets you orchestrate serverless workflows using a visual state machine?",
+      "options": [
+        "AWS Lambda",
+        "Amazon EventBridge",
+        "AWS Step Functions",
+        "AWS Batch"
+      ],
+      "correctAnswer": "AWS Step Functions",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which API Gateway type offers the lowest cost and latency but lacks features like usage plans and request validation?",
+      "options": [
+        "REST API",
+        "HTTP API",
+        "WebSocket API",
+        "GraphQL API"
+      ],
+      "correctAnswer": "HTTP API",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What is the default visibility timeout for a message in Amazon SQS?",
+      "options": [
+        "10 seconds",
+        "30 seconds",
+        "60 seconds",
+        "5 minutes"
+      ],
+      "correctAnswer": "30 seconds",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "What does Amazon CloudFront use to cache content close to end users?",
+      "options": [
+        "Availability Zones",
+        "Edge locations",
+        "Local Zones",
+        "Wavelength Zones"
+      ],
+      "correctAnswer": "Edge locations",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Amazon Aurora replicates data across how many copies in how many Availability Zones?",
+      "options": [
+        "3 copies across 2 AZs",
+        "4 copies across 2 AZs",
+        "6 copies across 3 AZs",
+        "9 copies across 3 AZs"
+      ],
+      "correctAnswer": "6 copies across 3 AZs",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "In AWS KMS envelope encryption, what is encrypted directly by the KMS key?",
+      "options": [
+        "The plaintext data",
+        "The data encryption key",
+        "The S3 bucket policy",
+        "The IAM role credentials"
+      ],
+      "correctAnswer": "The data encryption key",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the maximum unzipped deployment package size for an AWS Lambda function, including all layers?",
+      "options": [
+        "50 MB",
+        "128 MB",
+        "250 MB",
+        "512 MB"
+      ],
+      "correctAnswer": "250 MB",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "In Amazon Aurora, how many copies of data can be lost without affecting WRITE availability?",
+      "options": [
+        "1 copy",
+        "2 copies",
+        "3 copies",
+        "4 copies"
+      ],
+      "correctAnswer": "2 copies",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Which DynamoDB index type must be created at table creation time and cannot be added later?",
+      "options": [
+        "Global Secondary Index",
+        "Local Secondary Index",
+        "Sparse Index",
+        "Composite Index"
+      ],
+      "correctAnswer": "Local Secondary Index",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "In a DynamoDB table with a Local Secondary Index, what is the maximum size of an item collection for a single partition key value?",
+      "options": [
+        "1 GB",
+        "5 GB",
+        "10 GB",
+        "50 GB"
+      ],
+      "correctAnswer": "10 GB",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "When you assume an IAM role using AWS STS, what happens to your original IAM user permissions?",
+      "options": [
+        "They are combined with the role's permissions",
+        "They are temporarily replaced by the role's permissions",
+        "They remain active alongside the role's permissions",
+        "They are permanently revoked"
+      ],
+      "correctAnswer": "They are temporarily replaced by the role's permissions",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the maximum visibility timeout for a message in Amazon SQS?",
+      "options": [
+        "1 hour",
+        "6 hours",
+        "12 hours",
+        "24 hours"
+      ],
+      "correctAnswer": "12 hours",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Which AWS Step Functions workflow type supports executions lasting up to one year with exactly-once execution semantics?",
+      "options": [
+        "Express workflow",
+        "Standard workflow",
+        "Distributed Map workflow",
+        "Inline workflow"
+      ],
+      "correctAnswer": "Standard workflow",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "In the SNS-SQS fan-out pattern, what is the role of the SNS topic?",
+      "options": [
+        "It stores messages until consumers process them",
+        "It broadcasts each message to all subscribed SQS queues simultaneously",
+        "It deduplicates messages before delivery",
+        "It routes messages based on content filtering to a single queue"
+      ],
+      "correctAnswer": "It broadcasts each message to all subscribed SQS queues simultaneously",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the maximum number of DynamoDB read capacity units per second that a single partition can deliver?",
+      "options": [
+        "1,000 RCU",
+        "3,000 RCU",
+        "5,000 RCU",
+        "10,000 RCU"
+      ],
+      "correctAnswer": "3,000 RCU",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Which S3 server-side encryption option requires the customer to provide and manage their own encryption keys with each request?",
+      "options": [
+        "SSE-S3",
+        "SSE-KMS",
+        "SSE-C",
+        "DSSE-KMS"
+      ],
+      "correctAnswer": "SSE-C",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the minimum allowed CIDR block size when creating an AWS VPC?",
+      "options": [
+        "/16 (65,536 IPs)",
+        "/24 (256 IPs)",
+        "/28 (16 IPs)",
+        "/32 (1 IP)"
+      ],
+      "correctAnswer": "/28 (16 IPs)",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "In the 'Pilot Light' disaster recovery strategy, what is running in the DR region during normal operations?",
+      "options": [
+        "Nothing; all resources are created from backups on failover",
+        "Only core infrastructure like databases with data replication",
+        "A fully scaled-down copy of the production environment",
+        "A full duplicate of the production environment at equal scale"
+      ],
+      "correctAnswer": "Only core infrastructure like databases with data replication",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What mechanism does Amazon API Gateway use to enforce rate limiting on API requests?",
+      "options": [
+        "Round-robin scheduling",
+        "Token bucket algorithm",
+        "Weighted fair queuing",
+        "Leaky bucket with exponential backoff"
+      ],
+      "correctAnswer": "Token bucket algorithm",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "When an SQS FIFO queue has content-based deduplication enabled, how does it generate the deduplication ID?",
+      "options": [
+        "From the message group ID",
+        "By hashing the message body",
+        "From the sender's IAM principal",
+        "Using a UUID generated by the SQS service"
+      ],
+      "correctAnswer": "By hashing the message body",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "What is the default account-level throttle limit for Amazon API Gateway per region, across all API types?",
+      "options": [
+        "1,000 RPS",
+        "5,000 RPS",
+        "10,000 RPS",
+        "50,000 RPS"
+      ],
+      "correctAnswer": "10,000 RPS",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "In Amazon Aurora's quorum model, how many copies out of six must acknowledge a write for it to be considered committed?",
+      "options": [
+        "2 out of 6",
+        "3 out of 6",
+        "4 out of 6",
+        "5 out of 6"
+      ],
+      "correctAnswer": "4 out of 6",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "Which Network Load Balancer feature is NOT available on an Application Load Balancer?",
+      "options": [
+        "Path-based routing",
+        "Static IP addresses per Availability Zone",
+        "WebSocket support",
+        "HTTP/2 support"
+      ],
+      "correctAnswer": "Static IP addresses per Availability Zone",
+      "difficulty": "hard"
+    },
+    {
+      "questionText": "When session policies are passed to an STS AssumeRole call, how are the effective permissions determined?",
+      "options": [
+        "The session policies override the role's identity-based policies",
+        "The effective permissions are the union of session policies and role policies",
+        "The effective permissions are the intersection of session policies and the role's identity-based policies",
+        "Session policies are ignored if the role has an attached permissions boundary"
+      ],
+      "correctAnswer": "The effective permissions are the intersection of session policies and the role's identity-based policies",
+      "difficulty": "hard"
+    }
+  ]
+}
