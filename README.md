@@ -7,58 +7,26 @@ All communication flows through AppSync Events (WebSocket) — no API Gateway.
 ## Architecture
 
 ```mermaid
-graph LR
-    subgraph Clients
-        Admin["Admin UI<br/>/controller"]
-        Player["Player UI<br/>/play/:id"]
-        LB["Leaderboard<br/>/leaderboard/:id"]
-    end
+graph TD
+    Admin["Admin UI"] --> AppSync["AppSync Events"]
+    Player["Player UI"] --> AppSync
+    Leaderboard["Leaderboard UI"] --> AppSync
 
-    subgraph AppSync["AppSync Events"]
-        AC["admin/"]
-        LC["leaderboard/"]
-        PC["player/"]
-        GC["game/"]
-    end
+    AppSync --> SH["Session Handler"]
+    AppSync --> PM["Participant Manager"]
 
-    subgraph Lambda
-        SH["Session Handler<br/>(Standard)"]
-        PM["Participant Mgr<br/>(Standard)"]
-        ODF["Session ODF<br/>(Durable)"]
-        POD["Participant POD<br/>(Durable)"]
-        STR["Stream Handler<br/>(Standard)"]
-    end
-
-    subgraph Data
-        GT[("GameTable<br/>DDB + Streams")]
-        QT[("QuestionsTable<br/>DDB")]
-    end
-
-    Admin -->|publish| AC
-    AC -->|onPublish| SH
-    AC -->|onSubscribe| SH
-    Player -->|publish| PC
-    PC -->|onPublish| PM
-    LB -->|subscribe| LC
-    LC -->|onSubscribe| SH
-
-    Admin ---|subscribe| GC
-    Player ---|subscribe| GC
-    LB ---|subscribe| GC
-
-    SH -->|async invoke| ODF
-    PM -->|async invoke| POD
+    SH -->|async| ODF["Session Orchestrator<br/>(Durable Function)"]
+    PM -->|async| POD["Participant Orchestrator<br/>(Durable Function)"]
     ODF -->|callback| POD
-    ODF -->|publish| GC
-    POD -->|publish| PC
 
-    ODF --> GT
-    ODF --> QT
-    POD --> GT
-    SH --> GT
-    SH --> QT
-    GT -->|DDB Streams| STR
-    STR -->|publish| LC
+    SH --> DDB[("DynamoDB")]
+    ODF --> DDB
+    POD --> DDB
+
+    DDB -->|Streams| STR["Stream Handler"]
+    STR --> AppSync
+    ODF --> AppSync
+    POD --> AppSync
 ```
 
 ### Lambda Functions
