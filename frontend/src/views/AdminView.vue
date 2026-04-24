@@ -69,14 +69,12 @@ function handleDefaultChannelEvent(event: unknown) {
       break
 
     case 'ack':
-      // Create session ack — sessionId is here
       if (data.sessionId && !sessionId.value) {
         handleCreateAck(data.sessionId as string)
       }
       break
 
     case 'session_created':
-      // ODF confirmed session is ready — we're already in lobby from handleCreateAck
       break
   }
 }
@@ -158,27 +156,22 @@ function handleGameEvent(event: unknown) {
 }
 
 // ---------------------------------------------------------------------------
-// Lifecycle — clean, sequential, no races
+// Lifecycle
 // ---------------------------------------------------------------------------
 
 onMounted(async () => {
-  // Step 1: Subscribe to /admin/default — permanent for the life of this component
   const unsub = await subscribe('/admin/default', handleDefaultChannelEvent)
   unsubscribers.push(unsub)
 
-  // Step 2: Fetch categories
   await publish('/admin/default', [{ action: 'categories' }])
 
-  // Step 3: Check for existing session
   const savedSessionId = sessionStorage.getItem(ADMIN_STORAGE_KEY)
   if (savedSessionId) {
     sessionId.value = savedSessionId
     snapshotReceived.value = false
     await generateQR(savedSessionId)
-    // Stay in loading while we check — don't show lobby yet
     await subscribeToSessionChannels(savedSessionId)
 
-    // Wait up to 3s for snapshot. If it arrives, restoreFromSnapshot sets the phase.
     await new Promise<void>(resolve => {
       const timeout = setTimeout(() => resolve(), 3000)
       const check = setInterval(() => {
@@ -191,7 +184,6 @@ onMounted(async () => {
     })
 
     if (!snapshotReceived.value) {
-      // Session expired — clean up and show create form
       clearAdminSession()
       sessionId.value = ''
       qrCodeDataUrl.value = ''
@@ -209,7 +201,7 @@ onUnmounted(() => {
 })
 
 // ---------------------------------------------------------------------------
-// Create session — publish on the already-subscribed /admin/default channel
+// Create session
 // ---------------------------------------------------------------------------
 
 async function createSession() {
@@ -221,7 +213,6 @@ async function createSession() {
   createError.value = ''
 
   try {
-    // The ack will arrive via handleDefaultChannelEvent → 'ack' case
     await publish('/admin/default', [
       {
         action: 'create',
@@ -232,7 +223,6 @@ async function createSession() {
           : { questionCount: questionCount.value }),
       },
     ])
-    // handleCreateAck will be called when the ack event arrives
   } catch (err: unknown) {
     createError.value = err instanceof Error ? err.message : 'Failed to create session'
     creating.value = false
@@ -247,10 +237,6 @@ async function handleCreateAck(newSessionId: string) {
   creating.value = false
   phase.value = 'lobby'
 }
-
-// ---------------------------------------------------------------------------
-// Subscribe to session-specific channels
-// ---------------------------------------------------------------------------
 
 async function subscribeToSessionChannels(sid: string) {
   const u1 = await subscribe(`/admin/${sid}`, handleAdminSessionEvent)
@@ -323,7 +309,7 @@ async function generateQR(sid: string) {
   const playUrl = `${window.location.origin}/play/${sid}`
   sessionUrl.value = playUrl
   qrCodeDataUrl.value = await QRCode.toDataURL(playUrl, {
-    width: 256, margin: 2, color: { dark: '#08060d', light: '#ffffff' },
+    width: 280, margin: 2, color: { dark: '#f0eef5', light: '#00000000' },
   })
 }
 
@@ -358,200 +344,973 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
 </script>
 
 <template>
-  <div class="admin-view">
-    <h1>🎮 Game Controller</h1>
+  <div class="admin">
+    <!-- Ambient background -->
+    <div class="bg-grid" />
+    <div class="bg-orb bg-orb-gold" />
+    <div class="bg-orb bg-orb-cyan" />
 
-    <!-- LOADING -->
-    <div v-if="phase === 'loading'" class="phase-loading">
-      <p>Connecting…</p>
-    </div>
+    <div class="admin-inner">
+      <!-- Header -->
+      <header class="header">
+        <div class="logo">
+          <span class="logo-icon">?</span>
+          <span class="logo-text">Trivia Night</span>
+        </div>
+        <div class="header-badge">Host Control</div>
+      </header>
 
-    <!-- SETUP -->
-    <div v-if="phase === 'setup'" class="phase-setup">
-      <div class="form-card">
-        <h2>Create a Trivia Session</h2>
+      <!-- LOADING -->
+      <div v-if="phase === 'loading'" class="phase-center">
+        <div class="loader" />
+        <p class="phase-msg">Connecting…</p>
+      </div>
 
-        <div class="field">
-          <label for="category">Category</label>
-          <select id="category" v-model="selectedCategoryId" class="input">
-            <option v-if="categories.length === 0" value="" disabled>Loading…</option>
-            <option v-for="cat in categories" :key="cat.categoryId" :value="cat.categoryId">
-              {{ cat.categoryName }}
-            </option>
-          </select>
+      <!-- SETUP -->
+      <div v-if="phase === 'setup'" class="phase-setup">
+        <div class="setup-hero">
+          <h1 class="setup-title">New Game</h1>
+          <p class="setup-sub">Configure your trivia session and invite players.</p>
         </div>
 
-        <div class="field">
-          <label>Game Mode</label>
-          <div class="toggle-group">
-            <button :class="['toggle-btn', { active: mode === 'timed' }]" @click="mode = 'timed'">⏱️ Timed</button>
-            <button :class="['toggle-btn', { active: mode === 'question_count' }]" @click="mode = 'question_count'">📝 Question Count</button>
+        <div class="card">
+          <div class="field">
+            <label for="category">Category</label>
+            <div class="select-wrap">
+              <select id="category" v-model="selectedCategoryId">
+                <option v-if="categories.length === 0" value="" disabled>Loading…</option>
+                <option v-for="cat in categories" :key="cat.categoryId" :value="cat.categoryId">
+                  {{ cat.categoryName }}
+                </option>
+              </select>
+              <span class="select-arrow">▾</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Game Mode</label>
+            <div class="toggle-row">
+              <button :class="['toggle-btn', { active: mode === 'timed' }]" @click="mode = 'timed'">
+                <span class="toggle-icon">⏱</span> Timed
+              </button>
+              <button :class="['toggle-btn', { active: mode === 'question_count' }]" @click="mode = 'question_count'">
+                <span class="toggle-icon">#</span> Question Count
+              </button>
+            </div>
+          </div>
+
+          <div v-if="mode === 'timed'" class="field">
+            <label for="timeLimit">Time Limit</label>
+            <div class="stepper">
+              <button class="stepper-btn" @click="timeLimitMinutes = Math.max(1, timeLimitMinutes - 1)">−</button>
+              <span class="stepper-value">{{ timeLimitMinutes }} min</span>
+              <button class="stepper-btn" @click="timeLimitMinutes = Math.min(5, timeLimitMinutes + 1)">+</button>
+            </div>
+          </div>
+
+          <div v-if="mode === 'question_count'" class="field">
+            <label for="questionCount">Questions</label>
+            <div class="stepper">
+              <button class="stepper-btn" @click="questionCount = Math.max(1, questionCount - 1)">−</button>
+              <span class="stepper-value">{{ questionCount }}</span>
+              <button class="stepper-btn" @click="questionCount = Math.min(30, questionCount + 1)">+</button>
+            </div>
+          </div>
+
+          <button class="btn btn-gold btn-full" :disabled="creating || !selectedCategoryId" @click="createSession">
+            <span v-if="creating" class="spinner" />
+            {{ creating ? 'Creating…' : 'Create Session' }}
+          </button>
+          <p v-if="createError" class="error-msg">{{ createError }}</p>
+        </div>
+      </div>
+
+      <!-- LOBBY -->
+      <div v-if="phase === 'lobby'" class="phase-lobby">
+        <div class="lobby-top">
+          <h1 class="section-title">Lobby</h1>
+          <span class="mono-badge">{{ sessionId.slice(0, 8) }}</span>
+        </div>
+
+        <div class="lobby-grid">
+          <div class="card qr-card">
+            <p class="card-label">Scan to Join</p>
+            <div class="qr-frame">
+              <img v-if="qrCodeDataUrl" :src="qrCodeDataUrl" alt="QR code to join game" class="qr-img" />
+            </div>
+            <div class="qr-url">
+              <a :href="sessionUrl" target="_blank" rel="noopener">{{ sessionUrl }}</a>
+            </div>
+            <button class="btn btn-ghost btn-sm" @click="copyUrl">Copy Link</button>
+          </div>
+
+          <div class="card players-card">
+            <div class="card-header">
+              <p class="card-label">Players</p>
+              <span class="count-pill">{{ playerCount }}</span>
+            </div>
+            <div v-if="players.length === 0" class="empty-players">
+              <div class="empty-pulse" />
+              <p>Waiting for players…</p>
+            </div>
+            <ul v-else class="player-list">
+              <li v-for="(p, i) in players" :key="p.participantId" class="player-item" :style="{ animationDelay: i * 60 + 'ms' }">
+                <span class="player-avatar">{{ p.displayName.charAt(0).toUpperCase() }}</span>
+                <span class="player-name">{{ p.displayName }}</span>
+              </li>
+            </ul>
           </div>
         </div>
 
-        <div v-if="mode === 'timed'" class="field">
-          <label for="timeLimit">Time Limit (minutes)</label>
-          <input id="timeLimit" v-model.number="timeLimitMinutes" type="number" min="1" max="5" class="input input-narrow" />
-          <p class="hint">1–5 minutes</p>
-        </div>
-
-        <div v-if="mode === 'question_count'" class="field">
-          <label for="questionCount">Number of Questions</label>
-          <input id="questionCount" v-model.number="questionCount" type="number" min="1" max="30" class="input input-narrow" />
-          <p class="hint">1–30 questions</p>
-        </div>
-
-        <button class="btn btn-primary" :disabled="creating || !selectedCategoryId" @click="createSession">
-          {{ creating ? 'Creating…' : 'Create Session' }}
-        </button>
-        <p v-if="createError" class="error">{{ createError }}</p>
-      </div>
-    </div>
-
-    <!-- LOBBY -->
-    <div v-if="phase === 'lobby'" class="phase-lobby">
-      <div class="lobby-header">
-        <h2>Session Ready</h2>
-        <p class="session-id">Session: <code>{{ sessionId }}</code></p>
-      </div>
-      <div class="lobby-content">
-        <div class="qr-section">
-          <img v-if="qrCodeDataUrl" :src="qrCodeDataUrl" alt="QR code to join game" class="qr-code" />
-          <p class="join-url"><a :href="sessionUrl" target="_blank">{{ sessionUrl }}</a></p>
-          <button class="btn btn-small" @click="copyUrl">📋 Copy Link</button>
-        </div>
-        <div class="players-section">
-          <h3>Players ({{ playerCount }})</h3>
-          <div v-if="players.length === 0" class="empty-state">Waiting for players to join…</div>
-          <ul v-else class="player-list">
-            <li v-for="p in players" :key="p.participantId" class="player-item">
-              <span class="dot dot-green"></span>
-              <span class="player-name">{{ p.displayName }}</span>
-            </li>
-          </ul>
+        <div class="lobby-actions">
+          <button class="btn btn-gold btn-lg" :disabled="!canStart" @click="startGame">Start Game</button>
+          <button class="btn btn-ghost-danger" @click="cancelGame">Cancel</button>
         </div>
       </div>
-      <div class="lobby-controls">
-        <button class="btn btn-primary" :disabled="!canStart" @click="startGame">🚀 Start Game</button>
-        <button class="btn btn-danger" @click="cancelGame">✕ Cancel</button>
-      </div>
-    </div>
 
-    <!-- PLAYING -->
-    <div v-if="phase === 'playing'" class="phase-playing">
-      <div class="game-header">
-        <h2>Game In Progress</h2>
-        <div v-if="countdown > 0" class="countdown-display">Starting in <span class="countdown-number">{{ countdown }}</span>s</div>
-        <div v-else class="game-live">🔴 LIVE</div>
-      </div>
-      <div class="game-stats">
-        <div class="stat"><span class="stat-value">{{ playerCount }}</span><span class="stat-label">Players</span></div>
-        <div class="stat"><span class="stat-value">{{ completedCount }}</span><span class="stat-label">Finished</span></div>
-      </div>
-      <div class="leaderboard">
-        <h3>Leaderboard</h3>
-        <table v-if="sortedPlayers.length > 0" class="leaderboard-table">
-          <thead><tr><th>#</th><th>Player</th><th>Q</th><th>Score</th><th>Status</th></tr></thead>
-          <tbody>
-            <tr v-for="(p, i) in sortedPlayers" :key="p.participantId">
-              <td>{{ i + 1 }}</td><td>{{ p.displayName }}</td><td>{{ p.currentQuestion }}</td>
-              <td class="score-cell">{{ p.score }}</td><td><span :class="['dot', `dot-${p.statusDot}`]"></span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="game-controls"><button class="btn btn-danger" @click="cancelGame">✕ End Game</button></div>
-    </div>
+      <!-- PLAYING -->
+      <div v-if="phase === 'playing'" class="phase-playing">
+        <div class="playing-header">
+          <h1 class="section-title">Live Game</h1>
+          <div v-if="countdown > 0" class="countdown-chip">
+            Starting in <span class="countdown-num">{{ countdown }}</span>
+          </div>
+          <div v-else class="live-chip">
+            <span class="live-dot" /> LIVE
+          </div>
+        </div>
 
-    <!-- FINISHED -->
-    <div v-if="phase === 'finished'" class="phase-finished">
-      <h2>🏆 Game Over</h2>
-      <div class="final-results">
-        <table v-if="sortedPlayers.length > 0" class="leaderboard-table">
-          <thead><tr><th>Rank</th><th>Player</th><th>Questions</th><th>Score</th></tr></thead>
-          <tbody>
-            <tr v-for="(p, i) in sortedPlayers" :key="p.participantId" :class="{ 'top-player': i === 0 }">
-              <td><span v-if="i === 0">🥇</span><span v-else-if="i === 1">🥈</span><span v-else-if="i === 2">🥉</span><span v-else>{{ i + 1 }}</span></td>
-              <td>{{ p.displayName }}</td><td>{{ p.currentQuestion }}</td><td class="score-cell">{{ p.score }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <button class="btn btn-primary" @click="newGame">New Game</button>
-    </div>
+        <div class="stats-row">
+          <div class="stat-card">
+            <span class="stat-num">{{ playerCount }}</span>
+            <span class="stat-label">Players</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-num">{{ completedCount }}</span>
+            <span class="stat-label">Finished</span>
+          </div>
+        </div>
 
-    <!-- CANCELLED -->
-    <div v-if="phase === 'cancelled'" class="phase-cancelled">
-      <h2>Game Cancelled</h2>
-      <p>The session was cancelled.</p>
-      <button class="btn btn-primary" @click="newGame">New Game</button>
+        <div class="card">
+          <p class="card-label">Leaderboard</p>
+          <table v-if="sortedPlayers.length > 0" class="lb-table">
+            <thead>
+              <tr>
+                <th class="col-rank">#</th>
+                <th>Player</th>
+                <th class="col-q">Q</th>
+                <th class="col-score">Score</th>
+                <th class="col-status"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(p, i) in sortedPlayers" :key="p.participantId" :class="{ 'row-first': i === 0 }">
+                <td class="col-rank rank-num">{{ i + 1 }}</td>
+                <td class="player-cell">{{ p.displayName }}</td>
+                <td class="col-q mono">{{ p.currentQuestion }}</td>
+                <td class="col-score mono score-val">{{ p.score }}</td>
+                <td class="col-status">
+                  <span :class="['dot', `dot-${p.statusDot}`]" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="center-actions">
+          <button class="btn btn-ghost-danger" @click="cancelGame">End Game</button>
+        </div>
+      </div>
+
+      <!-- FINISHED -->
+      <div v-if="phase === 'finished'" class="phase-finished">
+        <div class="trophy-icon">🏆</div>
+        <h1 class="section-title">Game Over</h1>
+
+        <div class="card">
+          <table v-if="sortedPlayers.length > 0" class="lb-table">
+            <thead>
+              <tr>
+                <th class="col-rank">Rank</th>
+                <th>Player</th>
+                <th class="col-q">Questions</th>
+                <th class="col-score">Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(p, i) in sortedPlayers" :key="p.participantId" :class="{ 'row-first': i === 0 }">
+                <td class="col-rank">
+                  <span v-if="i === 0" class="medal">🥇</span>
+                  <span v-else-if="i === 1" class="medal">🥈</span>
+                  <span v-else-if="i === 2" class="medal">🥉</span>
+                  <span v-else class="rank-num">{{ i + 1 }}</span>
+                </td>
+                <td class="player-cell">{{ p.displayName }}</td>
+                <td class="col-q mono">{{ p.currentQuestion }}</td>
+                <td class="col-score mono score-val">{{ p.score }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="center-actions">
+          <button class="btn btn-gold btn-lg" @click="newGame">New Game</button>
+        </div>
+      </div>
+
+      <!-- CANCELLED -->
+      <div v-if="phase === 'cancelled'" class="phase-cancelled">
+        <div class="cancel-icon">✕</div>
+        <h1 class="section-title">Cancelled</h1>
+        <p class="phase-msg">The session was cancelled.</p>
+        <div class="center-actions">
+          <button class="btn btn-gold btn-lg" @click="newGame">New Game</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.admin-view { max-width: 640px; margin: 0 auto; padding: 32px 20px; }
-h1 { font-size: 32px; margin: 0 0 24px; text-align: center; }
-h2 { margin: 0 0 16px; }
-h3 { margin: 0 0 12px; font-size: 18px; }
-.phase-loading { text-align: center; padding: 60px 0; color: var(--text); }
-.form-card { background: var(--code-bg); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
-.field { margin-bottom: 20px; }
-.field label { display: block; font-weight: 500; color: var(--text-h); margin-bottom: 6px; font-size: 14px; }
-.input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 16px; font-family: var(--sans); background: var(--bg); color: var(--text-h); box-sizing: border-box; }
-.input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-.input-narrow { width: 120px; }
-.hint { font-size: 13px; color: var(--text); margin: 4px 0 0; }
-.toggle-group { display: flex; gap: 8px; }
-.toggle-btn { flex: 1; padding: 10px 16px; border: 2px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 15px; font-family: var(--sans); cursor: pointer; transition: all 0.15s; }
-.toggle-btn:hover { border-color: var(--accent-border); }
-.toggle-btn.active { border-color: var(--accent); background: var(--accent-bg); color: var(--text-h); }
-.btn { padding: 12px 24px; border: none; border-radius: 8px; font-size: 16px; font-family: var(--sans); font-weight: 500; cursor: pointer; transition: opacity 0.15s; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-primary { background: var(--accent); color: #fff; }
-.btn-primary:hover:not(:disabled) { opacity: 0.9; }
-.btn-danger { background: #dc2626; color: #fff; }
-.btn-danger:hover:not(:disabled) { opacity: 0.9; }
-.btn-small { padding: 6px 14px; font-size: 14px; background: var(--social-bg); color: var(--text-h); border: 1px solid var(--border); }
-.error { color: #dc2626; margin-top: 12px; font-size: 14px; }
-.lobby-header { text-align: center; margin-bottom: 24px; }
-.session-id { font-size: 14px; color: var(--text); }
-.session-id code { font-size: 13px; }
-.lobby-content { display: flex; gap: 32px; margin-bottom: 24px; }
-@media (max-width: 600px) { .lobby-content { flex-direction: column; align-items: center; } }
-.qr-section { text-align: center; flex-shrink: 0; }
-.qr-code { width: 200px; height: 200px; border-radius: 12px; border: 1px solid var(--border); }
-.join-url { font-size: 13px; margin: 8px 0; word-break: break-all; }
-.join-url a { color: var(--accent); text-decoration: none; }
-.players-section { flex: 1; min-width: 0; }
-.empty-state { color: var(--text); font-style: italic; padding: 20px 0; }
-.player-list { list-style: none; padding: 0; margin: 0; }
-.player-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 15px; color: var(--text-h); }
-.player-name { font-weight: 500; }
-.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-.dot-green { background: #22c55e; }
-.dot-amber { background: #f59e0b; }
-.dot-red { background: #ef4444; }
-.dot-checkmark { background: #22c55e; position: relative; }
-.dot-checkmark::after { content: '✓'; position: absolute; top: -3px; left: 1px; font-size: 8px; color: #fff; }
-.lobby-controls { display: flex; gap: 12px; justify-content: center; }
-.game-header { text-align: center; margin-bottom: 24px; }
-.countdown-display { font-size: 20px; color: var(--text); margin-top: 8px; }
-.countdown-number { font-size: 32px; font-weight: 700; color: var(--accent); font-family: var(--mono); }
-.game-live { font-size: 18px; font-weight: 600; color: #ef4444; margin-top: 8px; animation: pulse 1.5s ease-in-out infinite; }
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-.game-stats { display: flex; gap: 24px; justify-content: center; margin-bottom: 24px; }
-.stat { text-align: center; }
-.stat-value { display: block; font-size: 28px; font-weight: 700; color: var(--text-h); font-family: var(--mono); }
-.stat-label { font-size: 13px; color: var(--text); }
-.leaderboard { margin-bottom: 24px; }
-.leaderboard-table { width: 100%; border-collapse: collapse; font-size: 15px; }
-.leaderboard-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); font-size: 13px; color: var(--text); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
-.leaderboard-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-h); }
-.score-cell { font-weight: 600; font-family: var(--mono); }
-.top-player td { background: var(--accent-bg); }
-.game-controls { text-align: center; }
-.phase-finished, .phase-cancelled { text-align: center; }
-.final-results { margin: 24px 0; }
-.phase-cancelled p { color: var(--text); margin-bottom: 24px; }
+/* ============================================================
+   ADMIN VIEW — Host Control Panel
+   ============================================================ */
+
+.admin {
+  min-height: 100svh;
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+}
+
+/* ---- Ambient background ---- */
+
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+  background-size: 60px 60px;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.bg-orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(120px);
+  pointer-events: none;
+}
+
+.bg-orb-gold {
+  width: 500px;
+  height: 500px;
+  background: var(--gold);
+  opacity: 0.04;
+  top: -200px;
+  right: -150px;
+}
+
+.bg-orb-cyan {
+  width: 400px;
+  height: 400px;
+  background: var(--cyan);
+  opacity: 0.03;
+  bottom: -150px;
+  left: -100px;
+}
+
+/* ---- Header ---- */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--gold), #ef4444);
+  border-radius: var(--radius-sm);
+  font-family: Georgia, serif;
+  font-size: 20px;
+  font-weight: bold;
+  color: #fff;
+}
+
+.logo-text {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.header-badge {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+}
+
+/* ---- Loading ---- */
+
+.phase-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  gap: 16px;
+}
+
+.loader {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-medium);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.phase-msg {
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
+/* ---- Setup ---- */
+
+.phase-setup {
+  animation: slide-up 0.4s ease-out;
+}
+
+.setup-hero {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.setup-title {
+  font-size: 36px;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--gold-light), var(--gold), #ef4444);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 8px;
+}
+
+.setup-sub {
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
+/* ---- Card ---- */
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-card);
+}
+
+.card-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ---- Form fields ---- */
+
+.field {
+  margin-bottom: 24px;
+}
+
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.select-wrap {
+  position: relative;
+}
+
+.select-wrap select {
+  width: 100%;
+  padding: 12px 40px 12px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 15px;
+  appearance: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.select-wrap select:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+
+.select-arrow {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+  font-size: 14px;
+}
+
+/* ---- Toggle buttons ---- */
+
+.toggle-row {
+  display: flex;
+  gap: 8px;
+}
+
+.toggle-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.toggle-btn.active {
+  background: var(--gold-subtle);
+  border-color: var(--gold);
+  color: var(--gold-light);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+
+.toggle-icon {
+  font-size: 16px;
+}
+
+/* ---- Stepper ---- */
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-input);
+}
+
+.stepper-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.stepper-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.stepper-value {
+  min-width: 80px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  border-inline: 1px solid var(--border-subtle);
+  padding: 0 8px;
+}
+
+/* ---- Buttons ---- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 12px 28px;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-gold {
+  background: linear-gradient(135deg, var(--gold), #d97706);
+  color: #0c0a1a;
+  box-shadow: 0 2px 12px var(--gold-glow);
+}
+
+.btn-gold:hover:not(:disabled) {
+  box-shadow: var(--shadow-glow-gold);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.btn-ghost-danger {
+  background: transparent;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  color: var(--rose);
+  padding: 10px 24px;
+  font-size: 14px;
+}
+
+.btn-ghost-danger:hover {
+  background: rgba(244, 63, 94, 0.08);
+  border-color: var(--rose);
+}
+
+.btn-full { width: 100%; }
+.btn-lg { padding: 16px 36px; font-size: 16px; border-radius: var(--radius-md); }
+.btn-sm { padding: 8px 16px; font-size: 13px; }
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(12, 10, 26, 0.3);
+  border-top-color: #0c0a1a;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+.error-msg {
+  color: var(--rose);
+  font-size: 14px;
+  margin-top: 12px;
+  text-align: center;
+}
+
+/* ---- Lobby ---- */
+
+.phase-lobby {
+  animation: slide-up 0.4s ease-out;
+}
+
+.lobby-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.mono-badge {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+}
+
+.lobby-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 600px) {
+  .lobby-grid { grid-template-columns: 1fr; }
+}
+
+.qr-card {
+  text-align: center;
+}
+
+.qr-frame {
+  width: 200px;
+  height: 200px;
+  margin: 0 auto 12px;
+  border: 2px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-input);
+}
+
+.qr-img {
+  width: 180px;
+  height: 180px;
+}
+
+.qr-url {
+  font-size: 12px;
+  margin-bottom: 12px;
+  word-break: break-all;
+}
+
+.qr-url a {
+  color: var(--cyan-light);
+}
+
+.players-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.count-pill {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold-light);
+  background: var(--gold-subtle);
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+}
+
+.empty-players {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.empty-pulse {
+  width: 10px;
+  height: 10px;
+  background: var(--gold);
+  border-radius: 50%;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.player-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.player-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  animation: slide-up 0.3s ease-out both;
+}
+
+.player-avatar {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--violet), var(--cyan));
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.player-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.lobby-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+}
+
+/* ---- Playing ---- */
+
+.phase-playing {
+  animation: slide-up 0.4s ease-out;
+}
+
+.playing-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.countdown-chip {
+  font-size: 14px;
+  color: var(--gold-light);
+  background: var(--gold-subtle);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+}
+
+.countdown-num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.live-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--rose);
+  background: rgba(244, 63, 94, 0.08);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--rose);
+  border-radius: 50%;
+  animation: pulse-glow 1s ease-in-out infinite;
+}
+
+.stats-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  text-align: center;
+}
+
+.stat-num {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ---- Leaderboard table ---- */
+
+.lb-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.lb-table th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.lb-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.lb-table tr:last-child td {
+  border-bottom: none;
+}
+
+.col-rank { width: 50px; text-align: center; }
+.col-q { width: 60px; text-align: center; }
+.col-score { width: 80px; text-align: right; }
+.col-status { width: 40px; text-align: center; }
+
+.rank-num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.row-first td {
+  background: var(--gold-subtle);
+}
+
+.row-first .rank-num {
+  color: var(--gold-light);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.score-val {
+  font-weight: 700;
+  color: var(--emerald);
+}
+
+.player-cell {
+  font-weight: 500;
+}
+
+.medal {
+  font-size: 18px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-green { background: var(--emerald); box-shadow: 0 0 6px var(--emerald-glow); }
+.dot-amber { background: var(--gold); box-shadow: 0 0 6px var(--gold-glow); }
+.dot-red { background: var(--rose); box-shadow: 0 0 6px var(--rose-glow); }
+.dot-checkmark { background: var(--emerald); box-shadow: 0 0 6px var(--emerald-glow); }
+
+.center-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* ---- Finished / Cancelled ---- */
+
+.phase-finished, .phase-cancelled {
+  text-align: center;
+  animation: slide-up 0.4s ease-out;
+}
+
+.trophy-icon {
+  font-size: 64px;
+  margin-bottom: 8px;
+  animation: float 3s ease-in-out infinite;
+}
+
+.cancel-icon {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  background: rgba(244, 63, 94, 0.1);
+  border: 2px solid rgba(244, 63, 94, 0.3);
+  color: var(--rose);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.phase-finished .card, .phase-cancelled .card {
+  text-align: left;
+  margin-top: 24px;
+}
 </style>
