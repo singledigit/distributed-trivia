@@ -172,6 +172,7 @@ function handlePlayerEvent(event: unknown) {
       saveState()
       break
     case 'question':
+      clearFeedbackTimeout()
       currentQuestion.value = {
         questionNum: data.questionNum as number,
         totalQuestions: data.totalQuestions as number,
@@ -188,12 +189,14 @@ function handlePlayerEvent(event: unknown) {
       saveState()
       break
     case 'timeout_prompt':
+      clearFeedbackTimeout()
       timeoutCallbackToken.value = data.callbackToken as string
       lastCallbackToken.value = data.callbackToken as string
       phase.value = 'timeout'
       saveState()
       break
     case 'game_complete':
+      clearFeedbackTimeout()
       finalScore.value = data.totalScore as number
       questionsAnswered.value = data.questionsAnswered as number
       totalQuestions.value = data.totalQuestions as number
@@ -324,22 +327,41 @@ async function sendReady() {
   } catch (err) { console.error('[player] Failed to send ready:', err) }
 }
 
+let feedbackTimer: ReturnType<typeof setTimeout> | null = null
+
+function startFeedbackTimeout() {
+  clearFeedbackTimeout()
+  feedbackTimer = setTimeout(() => {
+    // No response after 8s — fall back to current question so they can retry
+    if (phase.value === 'feedback' && currentQuestion.value) {
+      console.warn('[player] Feedback timeout — returning to question')
+      phase.value = 'playing'
+    }
+  }, 8000)
+}
+
+function clearFeedbackTimeout() {
+  if (feedbackTimer) { clearTimeout(feedbackTimer); feedbackTimer = null }
+}
+
 async function submitAnswer(option: string) {
   if (!currentQuestion.value) return
   const token = currentQuestion.value.callbackToken
   phase.value = 'feedback'
+  startFeedbackTimeout()
   try {
     await publish(playerChannel(), [{ action: 'answer', selectedOption: option, callbackToken: token }])
-  } catch (err) { console.error('[player] Failed to submit answer:', err); phase.value = 'playing' }
+  } catch (err) { console.error('[player] Failed to submit answer:', err); clearFeedbackTimeout(); phase.value = 'playing' }
 }
 
 async function skipQuestion() {
   if (!currentQuestion.value) return
   const token = currentQuestion.value.callbackToken
   phase.value = 'feedback'
+  startFeedbackTimeout()
   try {
     await publish(playerChannel(), [{ action: 'skip', callbackToken: token }])
-  } catch (err) { console.error('[player] Failed to skip:', err); phase.value = 'playing' }
+  } catch (err) { console.error('[player] Failed to skip:', err); clearFeedbackTimeout(); phase.value = 'playing' }
 }
 
 async function requestMoreTime() {
@@ -412,6 +434,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopCountdown()
+  clearFeedbackTimeout()
   for (const unsub of unsubscribers) unsub()
 })
 
