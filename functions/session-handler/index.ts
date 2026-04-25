@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, QueryCommand as DocQueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, QueryCommand as DocQueryCommand } from '@aws-sdk/lib-dynamodb';
 import {
   LambdaClient,
   InvokeCommand,
@@ -91,9 +91,6 @@ async function handlePublish(event: AppSyncEventsLambdaEvent) {
         break;
       case 'status':
         response = await handleStatus(sessionId);
-        break;
-      case 'categories':
-        response = await handleCategories();
         break;
       default:
         response = { error: `Unknown action: ${action}` };
@@ -259,38 +256,6 @@ async function handleStatus(sessionId: string) {
     status: metadata.status,
     createdAt: metadata.createdAt,
   };
-}
-
-// ---------------------------------------------------------------------------
-// categories — list all available categories
-// ---------------------------------------------------------------------------
-
-async function handleCategories() {
-  const items: Record<string, unknown>[] = [];
-  let lastKey: Record<string, unknown> | undefined;
-
-  do {
-    const result = await ddb.send(
-      new ScanCommand({
-        TableName: QUESTIONS_TABLE,
-        FilterExpression: 'SK = :sk',
-        ExpressionAttributeValues: { ':sk': METADATA_SK },
-        ExclusiveStartKey: lastKey,
-      }),
-    );
-
-    if (result.Items) {
-      items.push(...(result.Items as Record<string, unknown>[]));
-    }
-    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-  } while (lastKey);
-
-  const categories = items.map((item) => ({
-    categoryId: item.categoryId as string,
-    categoryName: item.categoryName as string,
-  }));
-
-  return { type: 'categories', categories };
 }
 
 // ---------------------------------------------------------------------------

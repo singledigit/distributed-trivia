@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { RouterLink } from 'vue-router'
 import { subscribe, publish } from '../appsync-events'
+import { signIn, completeNewPassword, isAuthenticated, signOut, loadSession } from '../auth'
 import QRCode from 'qrcode'
 
 // ---------------------------------------------------------------------------
@@ -8,7 +10,7 @@ import QRCode from 'qrcode'
 // ---------------------------------------------------------------------------
 
 type GameMode = 'timed' | 'question_count'
-type Phase = 'loading' | 'setup' | 'lobby' | 'playing' | 'finished' | 'cancelled'
+type Phase = 'login' | 'new_password' | 'loading' | 'setup' | 'lobby' | 'playing' | 'finished' | 'cancelled'
 
 interface Player {
   participantId: string
@@ -25,10 +27,23 @@ interface Category {
 }
 
 // ---------------------------------------------------------------------------
+// Auth state
+// ---------------------------------------------------------------------------
+
+const loginUsername = ref('')
+const loginPassword = ref('')
+const loginError = ref('')
+const loggingIn = ref(false)
+const newPassword = ref('')
+const newPasswordConfirm = ref('')
+const challengeSession = ref('')
+const adminUsername = ref('')
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-const phase = ref<Phase>('loading')
+const phase = ref<Phase>('login')
 const sessionId = ref('')
 const qrCodeDataUrl = ref('')
 const sessionUrl = ref('')
@@ -61,7 +76,7 @@ function handleDefaultChannelEvent(event: unknown) {
         categories.value = (data.categories as Array<Record<string, string>>).map((c) => ({
           categoryId: c.categoryId,
           categoryName: c.categoryName,
-        }))
+        })).sort((a, b) => a.categoryName.localeCompare(b.categoryName))
         if (categories.value.length > 0 && !selectedCategoryId.value) {
           selectedCategoryId.value = categories.value[0].categoryId
         }
@@ -159,12 +174,83 @@ function handleGameEvent(event: unknown) {
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-onMounted(async () => {
+// ---------------------------------------------------------------------------
+// Auth actions
+// ---------------------------------------------------------------------------
+
+async function handleLogin() {
+  loginError.value = ''
+  loggingIn.value = true
+
+  const result = await signIn(loginUsername.value, loginPassword.value)
+
+  if (result.challengeName === 'NEW_PASSWORD_REQUIRED') {
+    challengeSession.value = result.challengeSession!
+    adminUsername.value = loginUsername.value
+    loggingIn.value = false
+    phase.value = 'new_password'
+    return
+  }
+
+  if (result.success) {
+    adminUsername.value = result.session!.username
+    loggingIn.value = false
+    await initializeAdmin()
+    return
+  }
+
+  loginError.value = result.error ?? 'Sign in failed'
+  loggingIn.value = false
+}
+
+async function handleNewPassword() {
+  if (newPassword.value !== newPasswordConfirm.value) {
+    loginError.value = 'Passwords do not match'
+    return
+  }
+  if (newPassword.value.length < 8) {
+    loginError.value = 'Password must be at least 8 characters'
+    return
+  }
+
+  loginError.value = ''
+  loggingIn.value = true
+
+  const result = await completeNewPassword(adminUsername.value, newPassword.value, challengeSession.value)
+
+  if (result.success) {
+    loggingIn.value = false
+    await initializeAdmin()
+    return
+  }
+
+  loginError.value = result.error ?? 'Password change failed'
+  loggingIn.value = false
+}
+
+function handleSignOut() {
+  signOut()
+  phase.value = 'login'
+  for (const unsub of unsubscribers) unsub()
+  unsubscribers.length = 0
+}
+
+async function initializeAdmin() {
+  phase.value = 'loading'
+  adminUsername.value = loadSession()?.username ?? ''
+
+  // Step 1: Subscribe to /admin/default
   const unsub = await subscribe('/admin/default', handleDefaultChannelEvent)
   unsubscribers.push(unsub)
 
-  await publish('/admin/default', [{ action: 'categories' }])
+  // Step 1b: Subscribe to /categories/default for category list
+  const catUnsub = await subscribe('/categories/default', handleDefaultChannelEvent)
+  unsubscribers.push(catUnsub)
 
+  // Step 2: Fetch categories
+  await publish('/categories/default', [{ action: 'list' }])
+
+  // Step 3: Check for existing session
   const savedSessionId = sessionStorage.getItem(ADMIN_STORAGE_KEY)
   if (savedSessionId) {
     sessionId.value = savedSessionId
@@ -193,6 +279,18 @@ onMounted(async () => {
   } else {
     phase.value = 'setup'
   }
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
+
+onMounted(async () => {
+  // Check if already authenticated
+  if (isAuthenticated()) {
+    await initializeAdmin()
+  }
+  // Otherwise stay on login phase
 })
 
 onUnmounted(() => {
@@ -357,8 +455,62 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
           <span class="logo-icon">?</span>
           <span class="logo-text">Trivia Night</span>
         </div>
-        <div class="header-badge">Host Control</div>
+        <nav v-if="phase !== 'login' && phase !== 'new_password'" class="nav">
+          <RouterLink to="/controller" class="nav-link nav-active">Game</RouterLink>
+          <RouterLink to="/categories" class="nav-link">Categories</RouterLink>
+        </nav>
+        <button v-if="phase !== 'login' && phase !== 'new_password'" class="btn-signout" @click="handleSignOut">Sign Out</button>
       </header>
+
+      <!-- LOGIN -->
+      <div v-if="phase === 'login'" class="phase-login">
+        <div class="setup-hero">
+          <h1 class="setup-title">Host Login</h1>
+          <p class="setup-sub">Sign in to create and manage trivia games.</p>
+        </div>
+        <div class="card">
+          <form class="login-form" @submit.prevent="handleLogin">
+            <div class="field">
+              <label for="username">Email</label>
+              <input id="username" v-model="loginUsername" type="email" class="input" autocomplete="username" placeholder="you@example.com" />
+            </div>
+            <div class="field">
+              <label for="password">Password</label>
+              <input id="password" v-model="loginPassword" type="password" class="input" autocomplete="current-password" />
+            </div>
+            <button type="submit" class="btn btn-gold btn-full" :disabled="loggingIn || !loginUsername || !loginPassword">
+              <span v-if="loggingIn" class="spinner" />
+              {{ loggingIn ? 'Signing in…' : 'Sign In' }}
+            </button>
+            <p v-if="loginError" class="error-msg">{{ loginError }}</p>
+          </form>
+        </div>
+      </div>
+
+      <!-- NEW PASSWORD -->
+      <div v-if="phase === 'new_password'" class="phase-login">
+        <div class="setup-hero">
+          <h1 class="setup-title">Set New Password</h1>
+          <p class="setup-sub">Your temporary password needs to be changed.</p>
+        </div>
+        <div class="card">
+          <form class="login-form" @submit.prevent="handleNewPassword">
+            <div class="field">
+              <label for="newPw">New Password</label>
+              <input id="newPw" v-model="newPassword" type="password" class="input" autocomplete="new-password" />
+            </div>
+            <div class="field">
+              <label for="confirmPw">Confirm Password</label>
+              <input id="confirmPw" v-model="newPasswordConfirm" type="password" class="input" autocomplete="new-password" />
+            </div>
+            <button type="submit" class="btn btn-gold btn-full" :disabled="loggingIn || !newPassword || !newPasswordConfirm">
+              <span v-if="loggingIn" class="spinner" />
+              {{ loggingIn ? 'Updating…' : 'Set Password' }}
+            </button>
+            <p v-if="loginError" class="error-msg">{{ loginError }}</p>
+          </form>
+        </div>
+      </div>
 
       <!-- LOADING -->
       <div v-if="phase === 'loading'" class="phase-center">
@@ -666,16 +818,20 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
   color: var(--text-primary);
 }
 
-.header-badge {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  color: var(--text-muted);
+.nav { display: flex; gap: 4px; margin-left: auto; }
+
+.nav-link {
   padding: 6px 14px;
-  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: all 0.2s;
 }
+
+.nav-link:hover { color: var(--text-secondary); background: var(--bg-card); }
+.nav-active { color: var(--text-primary); background: var(--bg-card); border: 1px solid var(--border-subtle); }
 
 /* ---- Loading ---- */
 
@@ -1312,5 +1468,141 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
 .phase-finished .card, .phase-cancelled .card {
   text-align: left;
   margin-top: 24px;
+}
+
+/* ---- Login ---- */
+
+.phase-login {
+  animation: slide-up 0.4s ease-out;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.login-form .field:last-of-type {
+  margin-bottom: 20px;
+}
+
+.input {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+
+.btn-signout {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-signout:hover {
+  border-color: var(--border-medium);
+  color: var(--text-secondary);
+}
+
+/* ---- Create Category ---- */
+
+.card-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.create-cat-row {
+  display: flex;
+  gap: 8px;
+}
+
+.cat-input {
+  flex: 1;
+  padding: 10px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.cat-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+
+.cat-input::placeholder {
+  color: var(--text-muted);
+}
+
+.btn-cat {
+  white-space: nowrap;
+  padding: 10px 18px;
+  font-size: 13px;
+}
+
+.spinner-sm {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
+.cat-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.cat-status-generating {
+  background: var(--gold-subtle);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  color: var(--gold-light);
+}
+
+.cat-status-created {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: var(--emerald);
+}
+
+.cat-status-error {
+  background: rgba(244, 63, 94, 0.06);
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  color: var(--rose);
+}
+
+.cat-status-icon {
+  flex-shrink: 0;
+}
+
+.cat-status-text {
+  line-height: 1.4;
 }
 </style>

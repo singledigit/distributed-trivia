@@ -2,6 +2,13 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Trivia Game v2 - Real-time multiplayer trivia with AppSync Events and durable functions
 
+Parameters:
+  AdminEmail:
+    Type: String
+    Description: Email address for the initial admin user (receives temporary password)
+    AllowedPattern: ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$
+    ConstraintDescription: Must be a valid email address
+
 Globals:
   Function:
     Runtime: nodejs22.x
@@ -75,8 +82,13 @@ Resources:
       EventConfig:
         AuthProviders:
           - AuthType: API_KEY
+          - AuthType: AMAZON_COGNITO_USER_POOLS
+            CognitoConfig:
+              UserPoolId: !Ref TriviaAdminUserPool
+              AwsRegion: !Ref AWS::Region
         ConnectionAuthModes:
           - AuthType: API_KEY
+          - AuthType: AMAZON_COGNITO_USER_POOLS
         DefaultPublishAuthModes:
           - AuthType: API_KEY
         DefaultSubscribeAuthModes:
@@ -126,6 +138,7 @@ Resources:
                 Resource:
                   - !GetAtt SessionHandlerFunction.Arn
                   - !GetAtt ParticipantManagerFunction.Arn
+                  - !GetAtt CategoryHandlerFunction.Arn
 
   SessionHandlerDataSource:
     Type: AWS::AppSync::DataSource
@@ -147,6 +160,16 @@ Resources:
       LambdaConfig:
         LambdaFunctionArn: !GetAtt ParticipantManagerFunction.Arn
 
+  CategoryHandlerDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt TriviaEventsApi.ApiId
+      Name: CategoryHandlerDS
+      Type: AWS_LAMBDA
+      ServiceRoleArn: !GetAtt AppSyncLambdaRole.Arn
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt CategoryHandlerFunction.Arn
+
   # --- Channel Namespaces ---
 
   AdminNamespace:
@@ -157,8 +180,10 @@ Resources:
       ApiId: !GetAtt TriviaEventsApi.ApiId
       Name: admin
       PublishAuthModes:
+        - AuthType: AMAZON_COGNITO_USER_POOLS
         - AuthType: API_KEY
       SubscribeAuthModes:
+        - AuthType: AMAZON_COGNITO_USER_POOLS
         - AuthType: API_KEY
       HandlerConfigs:
         OnPublish:
@@ -221,6 +246,80 @@ Resources:
         - AuthType: API_KEY
       SubscribeAuthModes:
         - AuthType: API_KEY
+
+  CategoriesNamespace:
+    Type: AWS::AppSync::ChannelNamespace
+    DependsOn:
+      - CategoryHandlerDataSource
+    Properties:
+      ApiId: !GetAtt TriviaEventsApi.ApiId
+      Name: categories
+      PublishAuthModes:
+        - AuthType: AMAZON_COGNITO_USER_POOLS
+        - AuthType: API_KEY
+      SubscribeAuthModes:
+        - AuthType: AMAZON_COGNITO_USER_POOLS
+        - AuthType: API_KEY
+      HandlerConfigs:
+        OnPublish:
+          Behavior: DIRECT
+          Integration:
+            DataSourceName: CategoryHandlerDS
+            LambdaConfig:
+              InvokeType: REQUEST_RESPONSE
+
+  # ============================================================
+  # Cognito — Admin Authentication
+  # ============================================================
+
+  TriviaAdminUserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Delete
+    Properties:
+      UserPoolName: !Sub ${AWS::StackName}-admin-pool
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+        InviteMessageTemplate:
+          EmailMessage: !Sub |
+            You've been invited to host Trivia Night!
+            Your username is {username} and your temporary password is {####}
+            Sign in at the game controller to get started.
+          EmailSubject: Trivia Night — Your Host Login
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+
+  TriviaAdminUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub ${AWS::StackName}-admin-client
+      UserPoolId: !Ref TriviaAdminUserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      PreventUserExistenceErrors: ENABLED
+
+  AdminUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref TriviaAdminUserPool
+      Username: !Ref AdminEmail
+      DesiredDeliveryMediums:
+        - EMAIL
+      UserAttributes:
+        - Name: email
+          Value: !Ref AdminEmail
+        - Name: email_verified
+          Value: 'true'
 
   # ============================================================
   # Lambda Functions
@@ -367,7 +466,71 @@ Resources:
           - index.ts
         External: []
 
-  # 5. Stream Handler (Standard Lambda — DDB Streams trigger)
+  # 5. Category Handler (Standard Lambda — category CRUD)
+  CategoryHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-category-handler
+      Description: Manages trivia categories — list, create, rename, delete
+      Handler: index.handler
+      CodeUri: functions/category-handler/
+      Timeout: 30
+      Environment:
+        Variables:
+          CATEGORY_CREATOR_ARN: !Ref CategoryCreatorFunction.Alias
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QuestionsTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CategoryCreatorFunction
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - index.ts
+        External: []
+
+  # 6. Category Creator ODF (Durable Function — AI-powered category generation)
+  CategoryCreatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-category-creator
+      Description: Durable function that generates trivia categories using Bedrock AI
+      Handler: index.handler
+      CodeUri: functions/category-creator/
+      Timeout: 900
+      MemorySize: 2048
+      DurableConfig:
+        ExecutionTimeout: 3600
+        RetentionPeriodInDays: 1
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          BEDROCK_MODEL_ID: us.anthropic.claude-sonnet-4-20250514-v1:0
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QuestionsTable
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicDurableExecutionRolePolicy
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: '*'
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - index.ts
+        External: []
+
+  # 6. Stream Handler (Standard Lambda — DDB Streams trigger)
   StreamHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -444,3 +607,11 @@ Outputs:
   StreamHandlerArn:
     Description: Stream Handler Lambda ARN
     Value: !GetAtt StreamHandlerFunction.Arn
+
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID for admin authentication
+    Value: !Ref TriviaAdminUserPool
+
+  CognitoClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref TriviaAdminUserPoolClient
