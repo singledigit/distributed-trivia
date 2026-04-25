@@ -93,7 +93,7 @@ async function handlePublish(event: AppSyncEventsLambdaEvent) {
         response = await handleStatus(sessionId);
         break;
       default:
-        response = { error: `Unknown action: ${action}` };
+        response = { type: 'error', message: `Unknown action: ${action}` };
     }
 
     results.push({ id: evt.id, payload: JSON.stringify(response) });
@@ -114,6 +114,7 @@ interface CreatePayload {
   timeLimitMinutes?: number;
 }
 
+/** Validate game config and invoke the Session Orchestrator ODF to create a new session. */
 async function handleCreate(payload: CreatePayload) {
   const { categoryId, mode, questionCount, timeLimitMinutes } = payload;
 
@@ -126,27 +127,27 @@ async function handleCreate(payload: CreatePayload) {
   );
 
   if (!categoryResult.Item) {
-    return { error: 'Category not found' };
+    return { type: 'error', message: 'Category not found' };
   }
 
   // Validate mode
   const modeCheck = validateMode(mode);
   if (!modeCheck.valid) {
-    return { error: modeCheck.error };
+    return { type: 'error', message: modeCheck.error };
   }
 
   // Validate mode-specific params
   if (mode === 'question_count') {
     const countCheck = validateQuestionCount(questionCount);
     if (!countCheck.valid) {
-      return { error: countCheck.error };
+      return { type: 'error', message: countCheck.error };
     }
   }
 
   if (mode === 'timed') {
     const timeCheck = validateTimeLimit(timeLimitMinutes);
     if (!timeCheck.valid) {
-      return { error: timeCheck.error };
+      return { type: 'error', message: timeCheck.error };
     }
   }
 
@@ -175,18 +176,19 @@ async function handleCreate(payload: CreatePayload) {
 // start — read ODF callback token, send start callback
 // ---------------------------------------------------------------------------
 
+/** Read the ODF callback token from METADATA and send a start signal. */
 async function handleStart(sessionId: string) {
   const metadata = await getSessionMetadata(sessionId);
   if (!metadata) {
-    return { error: 'Session not found' };
+    return { type: 'error', message: 'Session not found' };
   }
 
   if (!metadata.odfCallbackToken) {
-    return { error: 'Session is not ready to start (no callback token)' };
+    return { type: 'error', message: 'Session is not ready to start (no callback token)' };
   }
 
   if (metadata.status !== 'waiting') {
-    return { error: `Cannot start session in status: ${metadata.status}` };
+    return { type: 'error', message: `Cannot start session in status: ${metadata.status}` };
   }
 
   await lambda.send(
@@ -203,18 +205,19 @@ async function handleStart(sessionId: string) {
 // cancel — read ODF callback token, send cancel callback
 // ---------------------------------------------------------------------------
 
+/** Read the ODF callback token and send a cancel signal. Handles already-consumed tokens gracefully. */
 async function handleCancel(sessionId: string) {
   const metadata = await getSessionMetadata(sessionId);
   if (!metadata) {
-    return { error: 'Session not found' };
+    return { type: 'error', message: 'Session not found' };
   }
 
   if (!metadata.odfCallbackToken) {
-    return { error: 'Session is not ready (no callback token)' };
+    return { type: 'error', message: 'Session is not ready (no callback token)' };
   }
 
   if (metadata.status === 'completed' || metadata.status === 'cancelled') {
-    return { error: `Cannot cancel session in status: ${metadata.status}` };
+    return { type: 'error', message: `Cannot cancel session in status: ${metadata.status}` };
   }
 
   try {
@@ -225,10 +228,9 @@ async function handleCancel(sessionId: string) {
       }),
     );
   } catch (err: unknown) {
-    // Callback may have already been consumed (game already started/ended)
     const errName = (err as { name?: string })?.name;
     if (errName === 'CallbackTimeoutException' || errName === 'CallbackAlreadyCompletedException') {
-      return { error: 'Game is already in progress or ended — cannot cancel via callback' };
+      return { type: 'error', message: 'Game is already in progress or ended — cannot cancel via callback' };
     }
     throw err;
   }
@@ -240,10 +242,11 @@ async function handleCancel(sessionId: string) {
 // status — read METADATA, return current state
 // ---------------------------------------------------------------------------
 
+/** Return current session metadata (status, mode, config). */
 async function handleStatus(sessionId: string) {
   const metadata = await getSessionMetadata(sessionId);
   if (!metadata) {
-    return { error: 'Session not found' };
+    return { type: 'error', message: 'Session not found' };
   }
 
   return {

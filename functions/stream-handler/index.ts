@@ -1,10 +1,11 @@
 import type { DynamoDBStreamEvent, DynamoDBBatchResponse, DynamoDBRecord } from 'aws-lambda';
-import { DynamoDBClient, QueryCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { publishToChannel, sessionPK, PLAYER_PREFIX, ACTIVITY_PREFIX } from './shared/index';
 import type { PlayerRecord, ActivityRecord, ActivityStatus } from './shared/index';
 
-const ddb = new DynamoDBClient({});
+const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const TABLE_NAME = process.env.GAME_TABLE_NAME!;
 
 /**
@@ -50,13 +51,13 @@ async function queryPlayers(sessionId: string): Promise<PlayerRecord[]> {
       TableName: TABLE_NAME,
       KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
       ExpressionAttributeValues: {
-        ':pk': { S: sessionPK(sessionId) },
-        ':prefix': { S: PLAYER_PREFIX },
+        ':pk': sessionPK(sessionId),
+        ':prefix': PLAYER_PREFIX,
       },
     }),
   );
 
-  return (result.Items ?? []).map((item) => unmarshall(item) as PlayerRecord);
+  return (result.Items ?? []) as PlayerRecord[];
 }
 
 /**
@@ -71,13 +72,13 @@ async function queryPlayerActivities(
       TableName: TABLE_NAME,
       KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
       ExpressionAttributeValues: {
-        ':pk': { S: sessionPK(sessionId) },
-        ':prefix': { S: `${ACTIVITY_PREFIX}${participantId}#` },
+        ':pk': sessionPK(sessionId),
+        ':prefix': `${ACTIVITY_PREFIX}${participantId}#`,
       },
     }),
   );
 
-  return (result.Items ?? []).map((item) => unmarshall(item) as ActivityRecord);
+  return (result.Items ?? []) as ActivityRecord[];
 }
 
 /**

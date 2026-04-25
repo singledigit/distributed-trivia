@@ -105,6 +105,7 @@ async function handlePublish(event: AppSyncEventsLambdaEvent) {
 // list — return all categories sorted alphabetically
 // ---------------------------------------------------------------------------
 
+/** Scan QuestionsTable for all category METADATA records, return sorted alphabetically. */
 async function handleList() {
   const items: Record<string, unknown>[] = [];
   let lastKey: Record<string, unknown> | undefined;
@@ -134,6 +135,7 @@ async function handleList() {
 // create — validate name, invoke Category Creator ODF async
 // ---------------------------------------------------------------------------
 
+/** Validate category name and invoke the Category Creator ODF async. */
 async function handleCreate(payload: CategoryPayload) {
   const name = payload.categoryName?.trim();
   if (!name || name.length < 2) return { type: 'error', message: 'Category name must be at least 2 characters' };
@@ -155,6 +157,7 @@ async function handleCreate(payload: CategoryPayload) {
 // rename — update category METADATA record
 // ---------------------------------------------------------------------------
 
+/** Update the categoryName on an existing METADATA record. */
 async function handleRename(payload: CategoryPayload) {
   const { categoryId, categoryName } = payload;
   if (!categoryId) return { type: 'error', message: 'categoryId is required' };
@@ -178,6 +181,7 @@ async function handleRename(payload: CategoryPayload) {
 // delete — remove category METADATA + all QUESTION# records
 // ---------------------------------------------------------------------------
 
+/** Delete a category and all its QUESTION# records from QuestionsTable. */
 async function handleDelete(payload: CategoryPayload) {
   const { categoryId } = payload;
   if (!categoryId) return { type: 'error', message: 'categoryId is required' };

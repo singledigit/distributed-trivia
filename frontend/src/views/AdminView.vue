@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { RouterLink } from 'vue-router'
 import { subscribe, publish } from '../appsync-events'
-import { signIn, completeNewPassword, isAuthenticated, signOut, loadSession } from '../auth'
+import { signIn, completeNewPassword, isAuthenticated, loadSession } from '../auth'
+import AppHeader from '../components/AppHeader.vue'
 import QRCode from 'qrcode'
 
 // ---------------------------------------------------------------------------
@@ -228,13 +228,6 @@ async function handleNewPassword() {
   loggingIn.value = false
 }
 
-function handleSignOut() {
-  signOut()
-  phase.value = 'login'
-  for (const unsub of unsubscribers) unsub()
-  unsubscribers.length = 0
-}
-
 async function initializeAdmin() {
   phase.value = 'loading'
   adminUsername.value = loadSession()?.username ?? ''
@@ -449,18 +442,7 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
     <div class="bg-orb bg-orb-cyan" />
 
     <div class="admin-inner">
-      <!-- Header -->
-      <header class="header">
-        <div class="logo">
-          <span class="logo-icon">?</span>
-          <span class="logo-text">Trivia Night</span>
-        </div>
-        <nav v-if="phase !== 'login' && phase !== 'new_password'" class="nav">
-          <RouterLink to="/controller" class="nav-link nav-active">Game</RouterLink>
-          <RouterLink to="/categories" class="nav-link">Categories</RouterLink>
-        </nav>
-        <button v-if="phase !== 'login' && phase !== 'new_password'" class="btn-signout" @click="handleSignOut">Sign Out</button>
-      </header>
+      <AppHeader active-page="game" :show-nav="phase !== 'login' && phase !== 'new_password'" />
 
       <!-- LOGIN -->
       <div v-if="phase === 'login'" class="phase-login">
@@ -779,59 +761,6 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
   bottom: -150px;
   left: -100px;
 }
-
-/* ---- Header ---- */
-
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 32px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.logo-icon {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--gold), #ef4444);
-  border-radius: var(--radius-sm);
-  font-family: Georgia, serif;
-  font-size: 20px;
-  font-weight: bold;
-  color: #fff;
-}
-
-.logo-text {
-  font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.nav { display: flex; gap: 4px; margin-left: auto; }
-
-.nav-link {
-  padding: 6px 14px;
-  border-radius: var(--radius-full);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-decoration: none;
-  transition: all 0.2s;
-}
-
-.nav-link:hover { color: var(--text-secondary); background: var(--bg-card); }
-.nav-active { color: var(--text-primary); background: var(--bg-card); border: 1px solid var(--border-subtle); }
 
 /* ---- Loading ---- */
 
@@ -1503,23 +1432,6 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
 .input:focus {
   border-color: var(--gold);
   box-shadow: 0 0 0 3px var(--gold-glow);
-}
-
-.btn-signout {
-  background: transparent;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  color: var(--text-muted);
-  font-family: var(--font-display);
-  font-size: 12px;
-  padding: 4px 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-signout:hover {
-  border-color: var(--border-medium);
-  color: var(--text-secondary);
 }
 
 /* ---- Create Category ---- */

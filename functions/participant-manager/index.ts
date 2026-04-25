@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import {
   LambdaClient,
   InvokeCommand,
@@ -10,8 +10,8 @@ import type { AppSyncEventsLambdaEvent } from './shared/index';
 import {
   generateUlid,
   sessionPK,
-  PLAYER_PREFIX,
   validateDisplayName,
+  ttl24h,
 } from './shared/index';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -23,10 +23,6 @@ const POD_FUNCTION_ARN = process.env.POD_FUNCTION_ARN!;
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface PlayerSummary {
-  displayName: string;
-}
 
 interface JoinPayload {
   action: 'join';
@@ -115,13 +111,18 @@ export const handler = async (
 };
 
 // ---------------------------------------------------------------------------
-// join — validate display name, check uniqueness, start POD async
+// join — idempotent: conditional write reserves the name, retry returns same ID
 // ---------------------------------------------------------------------------
+
+/** Deterministic SK for name reservation: NAMERES#{normalized_lowercase_name} */
+function nameReservationSK(displayName: string): string {
+  return `NAMERES#${displayName.trim().toLowerCase()}`;
+}
 
 async function handleJoin(
   payload: JoinPayload,
   sessionId: string,
-  channelPath: string,
+  _channelPath: string,
 ): Promise<Record<string, unknown>> {
   const { displayName } = payload;
 
@@ -132,17 +133,48 @@ async function handleJoin(
   }
 
   const trimmedName = displayName.trim();
-
-  // Check uniqueness within session by querying PLAYER# records
-  const existingPlayers = await getPlayersForSession(sessionId);
-  if (isNameTaken(existingPlayers, trimmedName)) {
-    return { type: 'error', message: 'Display name is already taken' };
-  }
-
-  // Generate participant ID (ULID)
+  const pk = sessionPK(sessionId);
+  const sk = nameReservationSK(trimmedName);
   const participantId = generateUlid();
 
-  // Start POD async (InvocationType: Event)
+  // Atomic reservation — first write wins, no race window
+  try {
+    await ddb.send(new PutCommand({
+      TableName: GAME_TABLE,
+      Item: {
+        PK: pk,
+        SK: sk,
+        participantId,
+        displayName: trimmedName,
+        ttl: ttl24h(),
+      },
+      ConditionExpression: 'attribute_not_exists(PK)',
+    }));
+  } catch (err: unknown) {
+    const errName = (err as { name?: string })?.name;
+    if (errName === 'ConditionalCheckFailedException') {
+      // Name already reserved — return the existing participantId (idempotent)
+      const existing = await ddb.send(new GetCommand({
+        TableName: GAME_TABLE,
+        Key: { PK: pk, SK: sk },
+        ProjectionExpression: 'participantId, displayName',
+      }));
+
+      if (existing.Item) {
+        return {
+          type: 'joined',
+          sessionId,
+          participantId: existing.Item.participantId as string,
+          displayName: existing.Item.displayName as string,
+        };
+      }
+
+      return { type: 'error', message: 'Display name is already taken' };
+    }
+    throw err;
+  }
+
+  // Reservation succeeded — start POD async
   await lambda.send(
     new InvokeCommand({
       FunctionName: POD_FUNCTION_ARN,
@@ -181,35 +213,4 @@ async function handleCallback(
   );
 
   return { type: 'ack', action };
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Query all PLAYER# records for a session to check display name uniqueness.
- */
-async function getPlayersForSession(sessionId: string): Promise<PlayerSummary[]> {
-  const result = await ddb.send(
-    new QueryCommand({
-      TableName: GAME_TABLE,
-      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-      ExpressionAttributeValues: {
-        ':pk': sessionPK(sessionId),
-        ':prefix': PLAYER_PREFIX,
-      },
-      ProjectionExpression: 'displayName',
-    }),
-  );
-
-  return (result.Items ?? []) as PlayerSummary[];
-}
-
-/**
- * Check if a display name is already taken (case-insensitive).
- */
-function isNameTaken(players: PlayerSummary[], name: string): boolean {
-  const normalized = name.trim().toLowerCase();
-  return players.some((p) => p.displayName.trim().toLowerCase() === normalized);
 }

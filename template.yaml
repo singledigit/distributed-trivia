@@ -101,7 +101,6 @@ Resources:
     Type: AWS::AppSync::ApiKey
     Properties:
       ApiId: !GetAtt TriviaEventsApi.ApiId
-      Expires: 1808587200  # 2027-04-24 — rotate before expiry
 
   AppSyncLogsRole:
     Type: AWS::IAM::Role

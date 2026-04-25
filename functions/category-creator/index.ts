@@ -91,7 +91,9 @@ function validateQuestions(raw: Question[]): Question[] {
 export const handler = withDurableExecution(
   async (event: CategoryCreatorEvent, context: DurableContext): Promise<unknown> => {
     const { categoryName, adminChannel } = event;
-    const categoryId = generateUlid();
+
+    // MUST be inside a step — generateUlid() uses Date.now() and crypto.getRandomValues()
+    const categoryId = await context.step('generate-category-id', async () => generateUlid());
 
     context.logger.info('Category Creator started', { categoryName, categoryId });
 
