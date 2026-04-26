@@ -121,6 +121,30 @@ Return a structured outline as plain text.`,
 
     context.logger.info('Research complete', { length: research.length });
 
+    // ---- Step 1b: Pick category emoji and theme color ----
+    const categoryTheme = await context.step('pick-theme', async () => {
+      const result = await callBedrock(
+        'You select a single emoji and a vibrant hex color that best represent a trivia category. Return ONLY valid JSON with two fields: emoji and color. The color should be a bright, saturated hex color that works well on a dark background.',
+        `Pick one emoji and one hex color for the trivia category "${categoryName}". Return JSON like: {"emoji":"🚀","color":"#06b6d4"}`,
+        100,
+      );
+      try {
+        let jsonStr = result.trim();
+        const match = jsonStr.match(/\{[\s\S]*\}/);
+        if (match) jsonStr = match[0];
+        const parsed = JSON.parse(jsonStr) as { emoji?: string; color?: string };
+        const emoji = parsed.emoji && parsed.emoji.length <= 4 ? parsed.emoji : '🧠';
+        const color = parsed.color && /^#[0-9a-fA-F]{6}$/.test(parsed.color) ? parsed.color : '#f59e0b';
+        return { emoji, color };
+      } catch {
+        return { emoji: '🧠', color: '#f59e0b' };
+      }
+    });
+
+    const categoryEmoji = categoryTheme.emoji;
+    const categoryColor = categoryTheme.color;
+    context.logger.info('Theme selected', { categoryEmoji, categoryColor });
+
     // ---- Step 2: Generate questions ----
     await context.step('progress-generate', async () => {
       await publishProgress(adminChannel, categoryId, categoryName, 'generate', 'Generating 60 trivia questions…');
@@ -197,7 +221,7 @@ ${JSON.stringify(structurallyValid)}`,
     });
 
     const items: Record<string, unknown>[] = [
-      { PK: `CATEGORY#${categoryId}`, SK: 'METADATA', categoryId, categoryName },
+      { PK: `CATEGORY#${categoryId}`, SK: 'METADATA', categoryId, categoryName, categoryEmoji, categoryColor },
     ];
 
     for (const q of validatedQuestions) {
@@ -248,6 +272,7 @@ ${JSON.stringify(structurallyValid)}`,
           type: 'category_created',
           categoryId,
           categoryName,
+          categoryEmoji,
           questionCount: validatedQuestions.length,
           easy,
           medium,

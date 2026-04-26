@@ -38,6 +38,9 @@ const timeLimitMinutes = ref(0)
 const startTime = ref<string | null>(null)
 const countdown = ref<number | null>(null)
 const showAllPlayers = ref(false)
+const categoryName = ref('')
+const categoryEmoji = ref('')
+const categoryColor = ref('')
 
 const unsubscribes: (() => void)[] = []
 let countdownInterval: ReturnType<typeof setInterval> | null = null
@@ -144,6 +147,9 @@ function handleSnapshot(data: Record<string, unknown>) {
   if (data.questionCount) questionCount.value = data.questionCount as number
   if (data.mode) mode.value = data.mode as string
   if (data.timeLimitMinutes) timeLimitMinutes.value = data.timeLimitMinutes as number
+  if (data.categoryName) categoryName.value = data.categoryName as string
+  if (data.categoryEmoji) categoryEmoji.value = data.categoryEmoji as string
+  if (data.categoryColor) categoryColor.value = data.categoryColor as string
 
   const newPlayers = new Map<string, Player>()
   for (const p of (data.players as Array<Record<string, unknown>>) ?? []) {
@@ -244,9 +250,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="lb">
+  <div class="lb" :style="categoryColor ? { '--cat-color': categoryColor, '--cat-glow': categoryColor + '40', '--cat-bg': categoryColor + '0a', '--cat-border': categoryColor + '30' } : {}">
     <!-- Ambient -->
     <div class="lb-grid" />
+    <div class="lb-wash" />
     <div class="lb-orb lb-orb-1" />
     <div class="lb-orb lb-orb-2" />
 
@@ -261,7 +268,10 @@ onUnmounted(() => {
           <span v-if="gameStatus === 'in_progress'" class="live-dot" />
           {{ statusLabel }}
         </div>
-        <div class="session-mono">{{ sessionId.slice(0, 8) }}</div>
+        <div class="session-mono">
+          <span v-if="categoryEmoji" class="lb-cat-emoji">{{ categoryEmoji }}</span>
+          {{ categoryName || sessionId.slice(0, 8) }}
+        </div>
       </header>
 
       <!-- Countdown overlay -->
@@ -449,8 +459,8 @@ onUnmounted(() => {
 .lb-orb-1 {
   width: 600px;
   height: 600px;
-  background: var(--gold);
-  opacity: 0.04;
+  background: var(--cat-color, var(--gold));
+  opacity: 0.06;
   top: -200px;
   left: -200px;
 }
@@ -458,10 +468,20 @@ onUnmounted(() => {
 .lb-orb-2 {
   width: 500px;
   height: 500px;
-  background: var(--cyan);
-  opacity: 0.03;
+  background: var(--cat-color, var(--cyan));
+  opacity: 0.04;
   bottom: -200px;
   right: -150px;
+}
+
+.lb-wash {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 400px;
+  background: linear-gradient(180deg, var(--cat-bg, transparent) 0%, transparent 100%);
+  pointer-events: none;
 }
 
 /* ---- Header ---- */
@@ -517,23 +537,28 @@ onUnmounted(() => {
 
 .status-waiting { color: var(--violet); border-color: rgba(139, 92, 246, 0.3); background: rgba(139, 92, 246, 0.08); }
 .status-starting { color: var(--gold-light); border-color: rgba(245, 158, 11, 0.3); background: var(--gold-subtle); animation: pulse-glow 1s ease-in-out infinite; }
-.status-in_progress { color: var(--emerald); border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.08); }
+.status-in_progress { color: var(--cat-color, var(--emerald)); border-color: var(--cat-border, rgba(16, 185, 129, 0.3)); background: var(--cat-bg, rgba(16, 185, 129, 0.08)); }
 .status-completed { color: var(--gold-light); border-color: rgba(245, 158, 11, 0.3); background: var(--gold-subtle); }
 .status-cancelled { color: var(--rose); border-color: rgba(244, 63, 94, 0.3); background: rgba(244, 63, 94, 0.08); }
 
 .live-dot {
   width: 8px;
   height: 8px;
-  background: var(--emerald);
+  background: var(--cat-color, var(--emerald));
   border-radius: 50%;
   animation: pulse-glow 1s ease-in-out infinite;
 }
 
 .session-mono {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
+
+.lb-cat-emoji { font-size: 16px; }
 
 /* ---- Stats bar ---- */
 
@@ -556,8 +581,8 @@ onUnmounted(() => {
 }
 
 .stat-pill-gold {
-  border-color: rgba(245, 158, 11, 0.2);
-  background: var(--gold-subtle);
+  border-color: var(--cat-border, rgba(245, 158, 11, 0.2));
+  background: var(--cat-bg, var(--gold-subtle));
 }
 
 .stat-num {
@@ -568,7 +593,7 @@ onUnmounted(() => {
 }
 
 .stat-pill-gold .stat-num {
-  color: var(--gold-light);
+  color: var(--cat-color, var(--gold-light));
 }
 
 .stat-lbl {
@@ -590,11 +615,8 @@ onUnmounted(() => {
   font-size: 10rem;
   font-weight: 700;
   line-height: 1;
-  background: linear-gradient(135deg, var(--gold-light), var(--gold));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 0 60px var(--gold-glow));
+  color: var(--cat-color, var(--gold-light));
+  filter: drop-shadow(0 0 60px var(--cat-glow, var(--gold-glow)));
   animation: count-pulse 1s ease-in-out infinite;
 }
 
@@ -632,10 +654,10 @@ onUnmounted(() => {
   gap: 16px;
   padding: 16px 24px;
   margin-bottom: 1.5rem;
-  background: var(--gold-subtle);
-  border: 1px solid rgba(245, 158, 11, 0.25);
+  background: color-mix(in srgb, var(--cat-color, var(--gold)) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cat-color, var(--gold)) 25%, transparent);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-glow-gold);
+  box-shadow: 0 0 30px var(--cat-glow, var(--gold-glow)), 0 0 60px color-mix(in srgb, var(--cat-color, var(--gold)) 10%, transparent);
   animation: slide-up 0.3s ease-out;
 }
 
@@ -646,12 +668,12 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--gold), #d97706);
+  background: var(--cat-color, var(--gold));
   color: #fff;
   font-size: 20px;
   font-weight: 800;
   flex-shrink: 0;
-  box-shadow: 0 0 20px var(--gold-glow);
+  box-shadow: 0 0 20px var(--cat-glow, var(--gold-glow));
 }
 
 .leader-info {
@@ -664,7 +686,7 @@ onUnmounted(() => {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.5px;
-  color: var(--gold);
+  color: var(--cat-color, var(--gold));
   margin-bottom: 2px;
 }
 
@@ -681,9 +703,9 @@ onUnmounted(() => {
   font-family: var(--font-mono);
   font-size: 36px;
   font-weight: 700;
-  color: var(--gold-light);
+  color: var(--cat-color, var(--gold-light));
   flex-shrink: 0;
-  text-shadow: 0 0 20px var(--gold-glow);
+  text-shadow: 0 0 20px var(--cat-glow, var(--gold-glow));
 }
 
 /* ---- Podium ---- */
@@ -830,7 +852,7 @@ onUnmounted(() => {
 .table-row:last-child { border-bottom: none; }
 
 .row-leader {
-  background: var(--gold-subtle);
+  background: var(--cat-bg, var(--gold-subtle));
 }
 
 .td-rank { text-align: center; }
@@ -870,7 +892,7 @@ onUnmounted(() => {
   font-variant-numeric: tabular-nums;
 }
 
-.row-leader .td-score { color: var(--gold-light); }
+.row-leader .td-score { color: var(--cat-color, var(--gold-light)); }
 
 /* ---- Rest of players (expandable) ---- */
 

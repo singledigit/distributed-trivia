@@ -1,14 +1,14 @@
 import { withDurableExecution, DurableContext, CallbackError } from '@aws/durable-execution-sdk-js';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { LambdaClient, SendDurableExecutionCallbackSuccessCommand } from '@aws-sdk/client-lambda';
 import {
   sessionPK,
   categoryPK,
   METADATA_SK,
   PACKAGE_SK,
-  PLAYER_PREFIX,
   QUESTION_PREFIX,
+  PLAYER_PREFIX,
   ttl24h,
   publishToChannel,
 } from './shared/index';
@@ -97,6 +97,20 @@ export const handler = withDurableExecution(
       return (result.Items ?? []) as Question[];
     });
 
+    // Read category name and emoji for theming
+    const categoryMeta = await context.step('read-category-meta', async () => {
+      const result = await ddb.send(new GetCommand({
+        TableName: QUESTIONS_TABLE,
+        Key: { PK: categoryPK(categoryId), SK: METADATA_SK },
+        ProjectionExpression: 'categoryName, categoryEmoji, categoryColor',
+      }));
+      return {
+        categoryName: (result.Item?.categoryName as string) ?? categoryId,
+        categoryEmoji: (result.Item?.categoryEmoji as string) ?? '',
+        categoryColor: (result.Item?.categoryColor as string) ?? '',
+      };
+    });
+
     // Determine how many questions to select
     const targetCount = mode === 'question_count'
       ? questionCount!
@@ -120,6 +134,9 @@ export const handler = withDurableExecution(
         SK: METADATA_SK,
         sessionId,
         categoryId,
+        categoryName: categoryMeta.categoryName,
+        categoryEmoji: categoryMeta.categoryEmoji,
+        categoryColor: categoryMeta.categoryColor,
         mode,
         questionCount: selectedQuestions.length,
         timeLimitMinutes: timeLimitMinutes ?? 0,

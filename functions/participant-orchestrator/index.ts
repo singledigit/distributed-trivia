@@ -14,6 +14,7 @@ import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@
 import {
   sessionPK,
   PACKAGE_SK,
+  METADATA_SK,
   playerSK,
   activitySK,
   ttl24h,
@@ -269,6 +270,20 @@ export const handler = withDurableExecution(
       return result.Item.questions as Question[];
     });
 
+    // Step 1b: Read session metadata for category name and emoji
+    const categoryMeta = await context.step('read-category-meta', async () => {
+      const result = await ddb.send(new GetCommand({
+        TableName: TABLE,
+        Key: { PK: pk, SK: METADATA_SK },
+        ProjectionExpression: 'categoryName, categoryEmoji, categoryColor',
+      }));
+      return {
+        categoryName: (result.Item?.categoryName as string) ?? '',
+        categoryEmoji: (result.Item?.categoryEmoji as string) ?? '',
+        categoryColor: (result.Item?.categoryColor as string) ?? '',
+      };
+    });
+
     // Step 2: Write PLAYER# record
     await context.step('write-player-record', async () => {
       await ddb.send(new PutCommand({
@@ -289,7 +304,7 @@ export const handler = withDurableExecution(
     await context.step('publish-join-ack', async () => {
       await publishToChannel({
         channel: playerChannel,
-        events: [{ type: 'join_ack', sessionId, participantId, displayName, questionCount: questions.length }],
+        events: [{ type: 'join_ack', sessionId, participantId, displayName, questionCount: questions.length, categoryName: categoryMeta.categoryName, categoryEmoji: categoryMeta.categoryEmoji, categoryColor: categoryMeta.categoryColor }],
       });
     });
 
@@ -376,7 +391,42 @@ export const handler = withDurableExecution(
       }
     }
 
-    // All questions answered — finalize
+    // All questions answered — publish interim status and wait for game end
+    await context.step('publish-all-answered', async () => {
+      await publishToChannel({
+        channel: playerChannel,
+        events: [{
+          type: 'all_questions_answered',
+          totalScore,
+          questionsAnswered: questions.length,
+          totalQuestions: questions.length,
+          questionResults,
+        }],
+      });
+    });
+
+    // Wait for game-end signal (times_up or cancel from game channel → client sends complete)
+    try {
+      await context.waitForCallback<CallbackPayload>(
+        'wait-for-game-end',
+        async (callbackToken) => {
+          // Publish the callback token so the client can send 'complete' when the game ends
+          await publishToChannel({
+            channel: playerChannel,
+            events: [{ type: 'waiting_for_game_end', callbackToken }],
+          });
+        },
+        { timeout: { seconds: 600 } }, // 10 min max — game should end well before this
+      );
+    } catch (error) {
+      if (error instanceof CallbackError) {
+        context.logger.info('Game end wait timed out, finalizing anyway');
+      } else {
+        throw error;
+      }
+    }
+
+    // Finalize
     await context.step('write-final-status', async () => {
       await ddb.send(new UpdateCommand({
         TableName: TABLE,

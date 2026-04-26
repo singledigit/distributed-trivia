@@ -40,6 +40,9 @@ export interface SessionMetadata {
   SK: 'METADATA';
   sessionId: string;
   categoryId: string;
+  categoryName?: string;
+  categoryEmoji?: string;
+  categoryColor?: string;
   mode: GameMode;
   questionCount: number;
   timeLimitMinutes: number;
@@ -85,6 +88,9 @@ export interface CategoryMetadata {
   PK: string;
   SK: 'METADATA';
   categoryId: string;
+  categoryName?: string;
+  categoryEmoji?: string;
+  categoryColor?: string;
   categoryName: string;
 }
 

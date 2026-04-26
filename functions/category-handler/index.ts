@@ -125,6 +125,7 @@ async function handleList() {
     .map(item => ({
       categoryId: item.categoryId as string,
       categoryName: item.categoryName as string,
+      categoryEmoji: (item.categoryEmoji as string) ?? '',
     }))
     .sort((a, b) => a.categoryName.localeCompare(b.categoryName));
 

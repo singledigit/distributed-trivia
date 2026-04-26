@@ -11,6 +11,7 @@ import AppHeader from '../components/AppHeader.vue'
 interface Category {
   categoryId: string
   categoryName: string
+  categoryEmoji?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +212,7 @@ onUnmounted(() => {
           <div v-for="cat in categories" :key="cat.categoryId" class="cat-row">
             <!-- Normal view -->
             <template v-if="renamingId !== cat.categoryId">
+              <span v-if="cat.categoryEmoji" class="cat-emoji">{{ cat.categoryEmoji }}</span>
               <span class="cat-name">{{ cat.categoryName }}</span>
               <div class="cat-actions">
                 <button class="act-btn" title="Rename" @click="startRename(cat)">✏️</button>
@@ -336,6 +338,8 @@ onUnmounted(() => {
 .cat-row:last-child { border-bottom: none; }
 
 .cat-name { flex: 1; font-size: 15px; font-weight: 500; color: var(--text-primary); }
+
+.cat-emoji { font-size: 18px; flex-shrink: 0; }
 
 .cat-actions { display: flex; gap: 4px; flex-shrink: 0; }
 

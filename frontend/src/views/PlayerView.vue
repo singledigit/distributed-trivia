@@ -22,6 +22,7 @@ type GamePhase =
   | 'playing'
   | 'timeout'
   | 'feedback'
+  | 'waiting_done'
   | 'game_over'
 
 const phase = ref<GamePhase>('join')
@@ -29,6 +30,9 @@ const displayName = ref('')
 const nameError = ref('')
 const participantId = ref('')
 const questionCount = ref(0)
+const categoryName = ref('')
+const categoryEmoji = ref('')
+const categoryColor = ref('')
 
 // Countdown
 const countdownSeconds = ref(0)
@@ -78,6 +82,9 @@ const showReport = ref(false)
 // Ready callback token
 const readyCallbackToken = ref('')
 
+// Waiting-for-game-end callback token (when player finishes all questions before time)
+const waitingEndCallbackToken = ref('')
+
 // Subscriptions
 const unsubscribers: (() => void)[] = []
 
@@ -92,6 +99,9 @@ interface StoredState {
   displayName: string
   phase: GamePhase
   questionCount: number
+  categoryName: string
+  categoryEmoji: string
+  categoryColor: string
   currentQuestion: typeof currentQuestion.value
   lastCallbackToken: string
   finalScore: number
@@ -106,6 +116,9 @@ function saveState() {
     displayName: displayName.value,
     phase: phase.value,
     questionCount: questionCount.value,
+    categoryName: categoryName.value,
+    categoryEmoji: categoryEmoji.value,
+    categoryColor: categoryColor.value,
     currentQuestion: currentQuestion.value,
     lastCallbackToken: lastCallbackToken.value,
     finalScore: finalScore.value,
@@ -158,6 +171,9 @@ function handlePlayerEvent(event: unknown) {
   switch (type) {
     case 'join_ack':
       questionCount.value = data.questionCount as number
+      categoryName.value = (data.categoryName as string) ?? ''
+      categoryEmoji.value = (data.categoryEmoji as string) ?? ''
+      categoryColor.value = (data.categoryColor as string) ?? ''
       phase.value = 'lobby'
       saveState()
       break
@@ -203,6 +219,22 @@ function handlePlayerEvent(event: unknown) {
       questionResults.value = (data.questionResults as QuestionResult[]) ?? []
       phase.value = 'game_over'
       stopCountdown()
+      saveState()
+      break
+
+    case 'all_questions_answered':
+      clearFeedbackTimeout()
+      finalScore.value = data.totalScore as number
+      questionsAnswered.value = data.questionsAnswered as number
+      totalQuestions.value = data.totalQuestions as number
+      questionResults.value = (data.questionResults as QuestionResult[]) ?? []
+      phase.value = 'waiting_done'
+      saveState()
+      break
+
+    case 'waiting_for_game_end':
+      waitingEndCallbackToken.value = data.callbackToken as string
+      lastCallbackToken.value = data.callbackToken as string
       saveState()
       break
     case 'error':
@@ -377,9 +409,11 @@ async function skipFromTimeout() {
 }
 
 async function handleGameEnd() {
-  if (lastCallbackToken.value && phase.value !== 'game_over') {
+  // Send "complete" to POD using the appropriate callback token
+  const token = waitingEndCallbackToken.value || lastCallbackToken.value
+  if (token && phase.value !== 'game_over') {
     try {
-      await publish(playerChannel(), [{ action: 'complete', callbackToken: lastCallbackToken.value }])
+      await publish(playerChannel(), [{ action: 'complete', callbackToken: token }])
     } catch (err) { console.error('[player] Failed to send complete:', err) }
   }
 }
@@ -396,12 +430,41 @@ const progressPercent = computed(() => {
   return Math.round(((currentQuestion.value.questionNum - 1) / currentQuestion.value.totalQuestions) * 100)
 })
 
-const optionColors = ['cyan', 'gold', 'emerald', 'rose']
-
 // Report computed
 const correctCount = computed(() => questionResults.value.filter(r => r.isCorrect).length)
 const incorrectCount = computed(() => questionResults.value.filter(r => !r.isCorrect && !r.wasSkipped).length)
 const skippedCount = computed(() => questionResults.value.filter(r => r.wasSkipped).length)
+
+// Category theme — use backend emoji if available, fall back to keyword matching
+const categoryTheme = computed(() => {
+  // Prefer emoji from backend (set by Category Creator ODF)
+  if (categoryEmoji.value) {
+    return { emoji: categoryEmoji.value, label: categoryName.value || 'Trivia' }
+  }
+
+  // Fallback: keyword matching for legacy categories without stored emoji
+  const name = categoryName.value.toLowerCase()
+  if (name.includes('star wars')) return { emoji: '⚔️', label: 'Star Wars' }
+  if (name.includes('harry potter') || name.includes('hogwarts')) return { emoji: '⚡', label: 'Harry Potter' }
+  if (name.includes('disney')) return { emoji: '🏰', label: 'Disney' }
+  if (name.includes('marvel') || name.includes('avenger')) return { emoji: '🦸', label: 'Marvel' }
+  if (name.includes('music') || name.includes('80s') || name.includes('90s') || name.includes('hip hop')) return { emoji: '🎵', label: categoryName.value }
+  if (name.includes('science') || name.includes('nature')) return { emoji: '🔬', label: 'Science' }
+  if (name.includes('space') || name.includes('astro')) return { emoji: '🚀', label: 'Space' }
+  if (name.includes('history') || name.includes('war')) return { emoji: '📜', label: 'History' }
+  if (name.includes('sport')) return { emoji: '⚽', label: 'Sports' }
+  if (name.includes('food') || name.includes('cook') || name.includes('cuisine')) return { emoji: '🍳', label: 'Food' }
+  if (name.includes('geo') || name.includes('countr') || name.includes('capital')) return { emoji: '🌍', label: 'Geography' }
+  if (name.includes('bible') || name.includes('religio')) return { emoji: '📖', label: 'Bible' }
+  if (name.includes('movie') || name.includes('film') || name.includes('cinema')) return { emoji: '🎬', label: 'Movies' }
+  if (name.includes('tv') || name.includes('television') || name.includes('series')) return { emoji: '📺', label: 'TV' }
+  if (name.includes('game') || name.includes('video game') || name.includes('gaming')) return { emoji: '🎮', label: 'Gaming' }
+  if (name.includes('aws') || name.includes('cloud') || name.includes('architect')) return { emoji: '☁️', label: 'AWS' }
+  if (name.includes('animal') || name.includes('wildlife')) return { emoji: '🐾', label: 'Animals' }
+  if (name.includes('art') || name.includes('paint')) return { emoji: '🎨', label: 'Art' }
+  if (name.includes('book') || name.includes('literature')) return { emoji: '📚', label: 'Literature' }
+  return { emoji: '🧠', label: categoryName.value || 'Trivia' }
+})
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -413,6 +476,9 @@ onMounted(async () => {
     participantId.value = stored.participantId
     displayName.value = stored.displayName
     questionCount.value = stored.questionCount
+    categoryName.value = stored.categoryName ?? ''
+    categoryEmoji.value = stored.categoryEmoji ?? ''
+    categoryColor.value = stored.categoryColor ?? ''
     lastCallbackToken.value = stored.lastCallbackToken
     finalScore.value = stored.finalScore
     questionsAnswered.value = stored.questionsAnswered
@@ -442,7 +508,8 @@ watch(phase, () => { if (participantId.value) saveState() })
 </script>
 
 <template>
-  <div class="player">
+  <div class="player" :style="categoryColor ? { '--cat-color': categoryColor, '--cat-glow': categoryColor + '40', '--cat-bg': categoryColor + '0a', '--cat-border': categoryColor + '30' } : {}">
+    <div class="bg-wash" />
     <div class="bg-orb bg-orb-1" />
     <div class="bg-orb bg-orb-2" />
 
@@ -484,6 +551,10 @@ watch(phase, () => { if (participantId.value) saveState() })
         <h1>You're In!</h1>
         <p class="player-display-name">{{ displayName }}</p>
         <p class="lobby-sub">Waiting for the host to start…</p>
+        <div class="lobby-category" v-if="categoryName">
+          <span class="cat-emoji">{{ categoryTheme.emoji }}</span>
+          <span>{{ categoryName }}</span>
+        </div>
         <div v-if="questionCount" class="info-pill">{{ questionCount }} questions</div>
         <div class="waiting-dots">
           <span /><span /><span />
@@ -503,6 +574,7 @@ watch(phase, () => { if (participantId.value) saveState() })
             <div class="progress-fill" :style="{ width: progressPercent + '%' }" />
           </div>
           <div class="q-meta">
+            <span v-if="categoryTheme.emoji" class="q-cat-emoji">{{ categoryTheme.emoji }}</span>
             <span class="q-num">{{ currentQuestion.questionNum }}/{{ currentQuestion.totalQuestions }}</span>
             <span :class="['diff-pill', difficultyClass]">{{ difficultyLabel }}</span>
             <span class="pts-pill">{{ currentQuestion.points }} pts</span>
@@ -516,7 +588,7 @@ watch(phase, () => { if (participantId.value) saveState() })
           <button
             v-for="(option, idx) in currentQuestion.options"
             :key="idx"
-            :class="['opt-btn', `opt-${optionColors[idx % 4]}`]"
+            :class="['opt-btn']"
             @click="submitAnswer(option)"
           >
             <span class="opt-letter">{{ String.fromCharCode(65 + idx) }}</span>
@@ -541,6 +613,58 @@ watch(phase, () => { if (participantId.value) saveState() })
         <div class="timeout-actions">
           <button class="btn btn-gold" @click="requestMoreTime">More Time</button>
           <button class="btn btn-ghost" @click="skipFromTimeout">Skip</button>
+        </div>
+      </div>
+
+      <!-- WAITING DONE — finished all questions, waiting for game to end -->
+      <div v-else-if="phase === 'waiting_done'" class="phase-waiting-done">
+        <div class="wd-icon">✅</div>
+        <h1>All Done!</h1>
+        <div class="wd-score">
+          <span class="wd-score-num">{{ finalScore }}</span>
+          <span class="wd-score-label">points</span>
+        </div>
+        <p class="wd-sub">Waiting for the game to end…</p>
+        <div class="waiting-dots">
+          <span /><span /><span />
+        </div>
+
+        <!-- Preview report while waiting -->
+        <div v-if="questionResults.length > 0" class="report-summary" style="margin-top: 32px;">
+          <div class="report-pills">
+            <span class="rpill rpill-correct">{{ correctCount }} correct</span>
+            <span class="rpill rpill-wrong">{{ incorrectCount }} wrong</span>
+            <span v-if="skippedCount > 0" class="rpill rpill-skip">{{ skippedCount }} skipped</span>
+          </div>
+          <button class="btn-report" @click="showReport = !showReport">
+            {{ showReport ? 'Hide' : 'Review' }} Answers
+            <span :class="['report-arrow', { open: showReport }]">▾</span>
+          </button>
+        </div>
+
+        <div v-if="showReport && questionResults.length > 0" class="report">
+          <div
+            v-for="r in questionResults"
+            :key="r.questionNum"
+            :class="['report-item', { 'ri-correct': r.isCorrect, 'ri-wrong': !r.isCorrect && !r.wasSkipped, 'ri-skip': r.wasSkipped }]"
+          >
+            <div class="ri-header">
+              <span class="ri-num">Q{{ r.questionNum }}</span>
+              <span :class="['ri-badge', `ri-badge-${r.difficulty}`]">{{ r.difficulty }}</span>
+              <span class="ri-pts">{{ r.points }} pts</span>
+              <span class="ri-result">
+                <span v-if="r.isCorrect">✓</span>
+                <span v-else-if="r.wasSkipped">—</span>
+                <span v-else>✗</span>
+              </span>
+            </div>
+            <div class="ri-question">{{ r.questionText }}</div>
+            <div v-if="!r.isCorrect" class="ri-answer">
+              <span v-if="r.selectedOption" class="ri-yours">Your answer: {{ r.selectedOption }}</span>
+              <span v-else class="ri-yours">Skipped</span>
+              <span class="ri-correct-answer">Correct: {{ r.correctAnswer }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -639,8 +763,8 @@ watch(phase, () => { if (participantId.value) saveState() })
 .bg-orb-1 {
   width: 350px;
   height: 350px;
-  background: var(--gold);
-  opacity: 0.05;
+  background: var(--cat-color, var(--gold));
+  opacity: 0.07;
   top: -120px;
   left: -80px;
 }
@@ -648,10 +772,20 @@ watch(phase, () => { if (participantId.value) saveState() })
 .bg-orb-2 {
   width: 300px;
   height: 300px;
-  background: var(--cyan);
-  opacity: 0.04;
+  background: var(--cat-color, var(--cyan));
+  opacity: 0.05;
   bottom: -100px;
   right: -60px;
+}
+
+.bg-wash {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 300px;
+  background: linear-gradient(180deg, var(--cat-bg, transparent) 0%, transparent 100%);
+  pointer-events: none;
 }
 
 /* ---- Buttons ---- */
@@ -674,13 +808,14 @@ watch(phase, () => { if (participantId.value) saveState() })
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-gold {
-  background: linear-gradient(135deg, var(--gold), #d97706);
-  color: #0c0a1a;
-  box-shadow: 0 2px 12px var(--gold-glow);
+  background: var(--cat-color, linear-gradient(135deg, var(--gold), #d97706));
+  color: #fff;
+  box-shadow: 0 2px 16px var(--cat-glow, var(--gold-glow));
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
 }
 
 .btn-gold:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-gold);
+  box-shadow: 0 0 30px var(--cat-glow, var(--gold-glow)), 0 0 60px color-mix(in srgb, var(--cat-color, var(--gold)) 15%, transparent);
   transform: translateY(-1px);
 }
 
@@ -778,8 +913,8 @@ watch(phase, () => { if (participantId.value) saveState() })
 }
 
 .name-input:focus {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 4px var(--gold-glow);
+  border-color: var(--cat-color, var(--gold));
+  box-shadow: 0 0 0 4px var(--cat-glow, var(--gold-glow));
 }
 
 .name-input::placeholder {
@@ -813,9 +948,9 @@ watch(phase, () => { if (participantId.value) saveState() })
   justify-content: center;
   margin: 0 auto 16px;
   border-radius: 50%;
-  background: var(--emerald-glow);
-  border: 2px solid var(--emerald);
-  color: var(--emerald);
+  background: var(--cat-glow, var(--emerald-glow));
+  border: 2px solid var(--cat-color, var(--emerald));
+  color: var(--cat-color, var(--emerald));
   font-size: 28px;
   font-weight: 700;
 }
@@ -829,7 +964,7 @@ watch(phase, () => { if (participantId.value) saveState() })
 .player-display-name {
   font-size: 18px;
   font-weight: 600;
-  color: var(--gold-light);
+  color: var(--cat-color, var(--gold-light));
   margin-bottom: 4px;
 }
 
@@ -851,6 +986,24 @@ watch(phase, () => { if (participantId.value) saveState() })
   margin-bottom: 24px;
 }
 
+.lobby-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--cat-color, var(--gold)) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cat-color, var(--gold)) 25%, transparent);
+  color: var(--cat-color, var(--gold-light));
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.cat-emoji { font-size: 18px; }
+
+.q-cat-emoji { font-size: 16px; }
+
 .waiting-dots {
   display: flex;
   justify-content: center;
@@ -861,7 +1014,7 @@ watch(phase, () => { if (participantId.value) saveState() })
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--gold);
+  background: var(--cat-color, var(--gold));
   animation: pulse-glow 1.4s ease-in-out infinite;
 }
 
@@ -889,11 +1042,8 @@ watch(phase, () => { if (participantId.value) saveState() })
   font-size: 120px;
   font-weight: 700;
   line-height: 1;
-  background: linear-gradient(135deg, var(--gold-light), var(--gold));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 0 40px var(--gold-glow));
+  color: var(--cat-color, var(--gold-light));
+  filter: drop-shadow(0 0 40px var(--cat-glow, var(--gold-glow)));
   animation: count-pulse 1s ease-in-out infinite;
 }
 
@@ -917,7 +1067,7 @@ watch(phase, () => { if (participantId.value) saveState() })
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--gold), var(--cyan));
+  background: linear-gradient(90deg, var(--cat-color, var(--gold)), var(--cyan));
   border-radius: 2px;
   transition: width 0.4s ease;
 }
@@ -1004,8 +1154,8 @@ watch(phase, () => { if (participantId.value) saveState() })
 }
 
 .opt-btn:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-elevated);
+  border-color: var(--cat-border, var(--border-strong));
+  background: var(--cat-bg, var(--bg-elevated));
 }
 
 .opt-btn:active { transform: scale(0.97); }
@@ -1028,11 +1178,6 @@ watch(phase, () => { if (participantId.value) saveState() })
 .opt-text {
   flex: 1;
 }
-
-.opt-cyan .opt-letter { background: var(--cyan-subtle); color: var(--cyan-light); }
-.opt-gold .opt-letter { background: var(--gold-subtle); color: var(--gold-light); }
-.opt-emerald .opt-letter { background: rgba(16, 185, 129, 0.12); color: var(--emerald); }
-.opt-rose .opt-letter { background: rgba(244, 63, 94, 0.1); color: var(--rose); }
 
 .skip-btn {
   display: block;
@@ -1103,6 +1248,49 @@ watch(phase, () => { if (participantId.value) saveState() })
   justify-content: center;
 }
 
+/* ---- WAITING DONE ---- */
+
+.phase-waiting-done {
+  text-align: center;
+  animation: scale-in 0.4s ease-out;
+}
+
+.wd-icon {
+  font-size: 56px;
+  margin-bottom: 8px;
+}
+
+.phase-waiting-done h1 {
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 16px;
+}
+
+.wd-score { margin-bottom: 16px; }
+
+.wd-score-num {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--cat-color, var(--gold-light));
+  filter: drop-shadow(0 0 20px var(--cat-glow, var(--gold-glow)));
+}
+
+.wd-score-label {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  display: block;
+}
+
+.wd-sub {
+  color: var(--text-secondary);
+  font-size: 15px;
+  margin-bottom: 16px;
+}
+
 /* ---- GAME OVER ---- */
 
 .phase-gameover {
@@ -1132,11 +1320,8 @@ watch(phase, () => { if (participantId.value) saveState() })
   font-size: 72px;
   font-weight: 700;
   line-height: 1;
-  background: linear-gradient(135deg, var(--gold-light), var(--gold));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 0 20px var(--gold-glow));
+  color: var(--cat-color, var(--gold-light));
+  filter: drop-shadow(0 0 20px var(--cat-glow, var(--gold-glow)));
 }
 
 .go-score-label {
