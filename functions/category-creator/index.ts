@@ -27,6 +27,10 @@ const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-sonnet-4-2
 interface CategoryCreatorEvent {
   categoryName: string;
   adminChannel: string;
+  // Expand mode — add questions to existing category
+  expand?: boolean;
+  categoryId?: string;
+  existingQuestions?: Array<{ questionText: string; difficulty: string }>;
 }
 
 interface Question {
@@ -90,12 +94,15 @@ function validateQuestions(raw: Question[]): Question[] {
 
 export const handler = withDurableExecution(
   async (event: CategoryCreatorEvent, context: DurableContext): Promise<unknown> => {
-    const { categoryName, adminChannel } = event;
+    const { categoryName, adminChannel, expand, existingQuestions } = event;
+    const isExpand = expand === true;
 
-    // MUST be inside a step — generateUlid() uses Date.now() and crypto.getRandomValues()
-    const categoryId = await context.step('generate-category-id', async () => generateUlid());
+    // Use provided categoryId for expand, generate new one for create
+    const categoryId = isExpand && event.categoryId
+      ? event.categoryId
+      : await context.step('generate-category-id', async () => generateUlid());
 
-    context.logger.info('Category Creator started', { categoryName, categoryId });
+    context.logger.info('Category Creator started', { categoryName, categoryId, isExpand, existingCount: existingQuestions?.length ?? 0 });
 
     // ---- Step 1: Research ----
     await context.step('progress-research', async () => {
@@ -121,33 +128,43 @@ Return a structured outline as plain text.`,
 
     context.logger.info('Research complete', { length: research.length });
 
-    // ---- Step 1b: Pick category emoji and theme color ----
-    const categoryTheme = await context.step('pick-theme', async () => {
-      const result = await callBedrock(
-        'You select a single emoji and a vibrant hex color that best represent a trivia category. Return ONLY valid JSON with two fields: emoji and color. The color should be a bright, saturated hex color that works well on a dark background.',
-        `Pick one emoji and one hex color for the trivia category "${categoryName}". Return JSON like: {"emoji":"🚀","color":"#06b6d4"}`,
-        100,
-      );
-      try {
-        let jsonStr = result.trim();
-        const match = jsonStr.match(/\{[\s\S]*\}/);
-        if (match) jsonStr = match[0];
-        const parsed = JSON.parse(jsonStr) as { emoji?: string; color?: string };
-        const emoji = parsed.emoji && parsed.emoji.length <= 4 ? parsed.emoji : '🧠';
-        const color = parsed.color && /^#[0-9a-fA-F]{6}$/.test(parsed.color) ? parsed.color : '#f59e0b';
-        return { emoji, color };
-      } catch {
-        return { emoji: '🧠', color: '#f59e0b' };
-      }
-    });
+    // ---- Step 1b: Pick category emoji and theme color (skip for expand) ----
+    let categoryEmoji = '';
+    let categoryColor = '';
 
-    const categoryEmoji = categoryTheme.emoji;
-    const categoryColor = categoryTheme.color;
-    context.logger.info('Theme selected', { categoryEmoji, categoryColor });
+    if (!isExpand) {
+      const categoryTheme = await context.step('pick-theme', async () => {
+        const result = await callBedrock(
+          'You select a single emoji and a vibrant hex color that best represent a trivia category. Return ONLY valid JSON with two fields: emoji and color. The color should be a bright, saturated hex color that works well on a dark background.',
+          `Pick one emoji and one hex color for the trivia category "${categoryName}". Return JSON like: {"emoji":"🚀","color":"#06b6d4"}`,
+          100,
+        );
+        try {
+          let jsonStr = result.trim();
+          const match = jsonStr.match(/\{[\s\S]*\}/);
+          if (match) jsonStr = match[0];
+          const parsed = JSON.parse(jsonStr) as { emoji?: string; color?: string };
+          const emoji = parsed.emoji && parsed.emoji.length <= 4 ? parsed.emoji : '🧠';
+          const color = parsed.color && /^#[0-9a-fA-F]{6}$/.test(parsed.color) ? parsed.color : '#f59e0b';
+          return { emoji, color };
+        } catch {
+          return { emoji: '🧠', color: '#f59e0b' };
+        }
+      });
+
+      categoryEmoji = categoryTheme.emoji;
+      categoryColor = categoryTheme.color;
+      context.logger.info('Theme selected', { categoryEmoji, categoryColor });
+    }
 
     // ---- Step 2: Generate questions ----
+    const existingContext = isExpand && existingQuestions && existingQuestions.length > 0
+      ? `\n\nEXISTING QUESTIONS (do NOT duplicate any of these):\n${existingQuestions.map((q, i) => `${i + 1}. [${q.difficulty}] ${q.questionText}`).join('\n')}\n`
+      : '';
+
     await context.step('progress-generate', async () => {
-      await publishProgress(adminChannel, categoryId, categoryName, 'generate', 'Generating 60 trivia questions…');
+      await publishProgress(adminChannel, categoryId, categoryName, 'generate',
+        isExpand ? `Generating 60 new questions (avoiding ${existingQuestions?.length ?? 0} existing)…` : 'Generating 60 trivia questions…');
     });
 
     const rawQuestions = await context.step('generate-questions', async () => {
@@ -156,15 +173,15 @@ Return a structured outline as plain text.`,
         `Using this research on "${categoryName}":
 
 ${research}
-
-Generate exactly 60 trivia questions. Requirements:
+${existingContext}
+Generate exactly 60 NEW trivia questions. Requirements:
 - Exactly 20 easy, 20 medium, 20 hard questions
 - Each question: 4 answer options OR True/False with ["True", "False"]
 - correctAnswer must exactly match one option
 - Easy = common knowledge, Medium = requires familiarity, Hard = challenges experts
 - Cover the full breadth of subtopics from the research
 - Mix in 2-4 True/False questions across difficulty levels
-- All facts must be accurate and verifiable
+- All facts must be accurate and verifiable${isExpand ? '\n- Do NOT repeat or rephrase any of the existing questions listed above\n- Cover different aspects and facts than the existing questions' : ''}
 
 Return ONLY a JSON array. Each element:
 {"questionText":"...","options":["A","B","C","D"],"correctAnswer":"B","difficulty":"easy"}`,
@@ -220,9 +237,9 @@ ${JSON.stringify(structurallyValid)}`,
       await publishProgress(adminChannel, categoryId, categoryName, 'save', `Saving ${validatedQuestions.length} questions…`);
     });
 
-    const items: Record<string, unknown>[] = [
-      { PK: `CATEGORY#${categoryId}`, SK: 'METADATA', categoryId, categoryName, categoryEmoji, categoryColor },
-    ];
+    const items: Record<string, unknown>[] = isExpand
+      ? [] // No METADATA for expand — category already exists
+      : [{ PK: `CATEGORY#${categoryId}`, SK: 'METADATA', categoryId, categoryName, categoryEmoji, categoryColor }];
 
     for (const q of validatedQuestions) {
       const questionId = generateUlid();
@@ -269,7 +286,7 @@ ${JSON.stringify(structurallyValid)}`,
       await publishToChannel({
         channel: adminChannel,
         events: [{
-          type: 'category_created',
+          type: isExpand ? 'category_expanded' : 'category_created',
           categoryId,
           categoryName,
           categoryEmoji,

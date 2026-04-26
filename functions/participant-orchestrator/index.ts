@@ -275,12 +275,14 @@ export const handler = withDurableExecution(
       const result = await ddb.send(new GetCommand({
         TableName: TABLE,
         Key: { PK: pk, SK: METADATA_SK },
-        ProjectionExpression: 'categoryName, categoryEmoji, categoryColor',
+        ProjectionExpression: 'categoryName, categoryEmoji, categoryColor, #m',
+        ExpressionAttributeNames: { '#m': 'mode' },
       }));
       return {
         categoryName: (result.Item?.categoryName as string) ?? '',
         categoryEmoji: (result.Item?.categoryEmoji as string) ?? '',
         categoryColor: (result.Item?.categoryColor as string) ?? '',
+        mode: (result.Item?.mode as string) ?? '',
       };
     });
 
@@ -304,7 +306,7 @@ export const handler = withDurableExecution(
     await context.step('publish-join-ack', async () => {
       await publishToChannel({
         channel: playerChannel,
-        events: [{ type: 'join_ack', sessionId, participantId, displayName, questionCount: questions.length, categoryName: categoryMeta.categoryName, categoryEmoji: categoryMeta.categoryEmoji, categoryColor: categoryMeta.categoryColor }],
+        events: [{ type: 'join_ack', sessionId, participantId, displayName, questionCount: questions.length, mode: categoryMeta.mode, categoryName: categoryMeta.categoryName, categoryEmoji: categoryMeta.categoryEmoji, categoryColor: categoryMeta.categoryColor }],
       });
     });
 

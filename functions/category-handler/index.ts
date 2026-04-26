@@ -19,7 +19,7 @@ import {
   InvocationType,
 } from '@aws-sdk/client-lambda';
 import type { AppSyncEventsLambdaEvent } from './shared/index';
-import { categoryPK, METADATA_SK } from './shared/index';
+import { categoryPK, METADATA_SK, QUESTION_PREFIX } from './shared/index';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const lambda = new LambdaClient({});
@@ -91,6 +91,9 @@ async function handlePublish(event: AppSyncEventsLambdaEvent) {
       case 'delete':
         response = await handleDelete(payload);
         break;
+      case 'expand':
+        response = await handleExpand(payload);
+        break;
       default:
         response = { type: 'error', message: `Unknown action: ${action}` };
     }
@@ -105,27 +108,42 @@ async function handlePublish(event: AppSyncEventsLambdaEvent) {
 // list — return all categories sorted alphabetically
 // ---------------------------------------------------------------------------
 
-/** Scan QuestionsTable for all category METADATA records, return sorted alphabetically. */
+/** Scan QuestionsTable for all category METADATA records with question counts, return sorted alphabetically. */
 async function handleList() {
-  const items: Record<string, unknown>[] = [];
+  // Scan all items to get both METADATA and QUESTION counts
+  const allItems: Record<string, unknown>[] = [];
   let lastKey: Record<string, unknown> | undefined;
 
   do {
     const result = await ddb.send(new ScanCommand({
       TableName: QUESTIONS_TABLE,
-      FilterExpression: 'SK = :sk',
-      ExpressionAttributeValues: { ':sk': METADATA_SK },
+      ProjectionExpression: 'PK, SK, categoryId, categoryName, categoryEmoji',
       ExclusiveStartKey: lastKey,
     }));
-    if (result.Items) items.push(...(result.Items as Record<string, unknown>[]));
+    if (result.Items) allItems.push(...(result.Items as Record<string, unknown>[]));
     lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
   } while (lastKey);
 
-  const categories = items
-    .map(item => ({
+  // Group: count questions per category, collect metadata
+  const metadataMap = new Map<string, Record<string, unknown>>();
+  const questionCounts = new Map<string, number>();
+
+  for (const item of allItems) {
+    const pk = item.PK as string;
+    const sk = item.SK as string;
+    if (sk === METADATA_SK) {
+      metadataMap.set(pk, item);
+    } else if (sk.startsWith(QUESTION_PREFIX)) {
+      questionCounts.set(pk, (questionCounts.get(pk) ?? 0) + 1);
+    }
+  }
+
+  const categories = [...metadataMap.entries()]
+    .map(([pk, item]) => ({
       categoryId: item.categoryId as string,
       categoryName: item.categoryName as string,
       categoryEmoji: (item.categoryEmoji as string) ?? '',
+      questionCount: questionCounts.get(pk) ?? 0,
     }))
     .sort((a, b) => a.categoryName.localeCompare(b.categoryName));
 
@@ -220,4 +238,62 @@ async function handleDelete(payload: CategoryPayload) {
   }
 
   return { type: 'ack', action: 'delete', categoryId, deletedCount: items.length };
+}
+
+// ---------------------------------------------------------------------------
+// expand — read existing questions, invoke ODF to generate more
+// ---------------------------------------------------------------------------
+
+/** Read existing questions for a category and invoke the Category Creator ODF to add 60 more. */
+async function handleExpand(payload: CategoryPayload) {
+  const { categoryId } = payload;
+  if (!categoryId) return { type: 'error', message: 'categoryId is required' };
+
+  const pk = categoryPK(categoryId);
+
+  // Read category metadata
+  const metaResult = await ddb.send(new QueryCommand({
+    TableName: QUESTIONS_TABLE,
+    KeyConditionExpression: 'PK = :pk AND SK = :sk',
+    ExpressionAttributeValues: { ':pk': pk, ':sk': METADATA_SK },
+  }));
+
+  const metadata = metaResult.Items?.[0];
+  if (!metadata) return { type: 'error', message: 'Category not found' };
+
+  // Read all existing question texts to pass as context
+  const questionItems: Record<string, unknown>[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+
+  do {
+    const result = await ddb.send(new QueryCommand({
+      TableName: QUESTIONS_TABLE,
+      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+      ExpressionAttributeValues: { ':pk': pk, ':prefix': QUESTION_PREFIX },
+      ProjectionExpression: 'questionText, difficulty',
+      ExclusiveStartKey: lastKey,
+    }));
+    if (result.Items) questionItems.push(...(result.Items as Record<string, unknown>[]));
+    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+
+  const existingQuestions = questionItems.map(q => ({
+    questionText: q.questionText as string,
+    difficulty: q.difficulty as string,
+  }));
+
+  // Invoke Category Creator ODF with expand mode
+  await lambda.send(new InvokeCommand({
+    FunctionName: CATEGORY_CREATOR_ARN,
+    InvocationType: InvocationType.Event,
+    Payload: JSON.stringify({
+      categoryId,
+      categoryName: metadata.categoryName as string,
+      adminChannel: '/categories/default',
+      expand: true,
+      existingQuestions,
+    }),
+  }));
+
+  return { type: 'ack', action: 'expand', categoryId, categoryName: metadata.categoryName as string, existingCount: existingQuestions.length };
 }

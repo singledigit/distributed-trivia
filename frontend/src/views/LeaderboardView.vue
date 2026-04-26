@@ -41,6 +41,8 @@ const showAllPlayers = ref(false)
 const categoryName = ref('')
 const categoryEmoji = ref('')
 const categoryColor = ref('')
+const gameTimeRemaining = ref<number | null>(null)
+let gameTimerInterval: ReturnType<typeof setInterval> | null = null
 
 const unsubscribes: (() => void)[] = []
 let countdownInterval: ReturnType<typeof setInterval> | null = null
@@ -77,6 +79,15 @@ const completedCount = computed(() => {
 const playingCount = computed(() => totalPlayers.value - completedCount.value)
 
 const highScore = computed(() => leader.value?.score ?? 0)
+
+const gameTimeFormatted = computed(() => {
+  if (gameTimeRemaining.value === null) return ''
+  const mins = Math.floor(gameTimeRemaining.value / 60)
+  const secs = gameTimeRemaining.value % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+})
+
+const isTimedMode = computed(() => mode.value === 'timed')
 
 const statusLabel = computed(() => {
   switch (gameStatus.value) {
@@ -121,11 +132,30 @@ function startCountdown(targetTime: string) {
       countdownInterval = null
       gameStatus.value = 'in_progress'
       countdown.value = null
+      // Start the game timer for timed mode
+      if (mode.value === 'timed' && timeLimitMinutes.value > 0) {
+        startGameTimer(new Date(targetTime).getTime(), timeLimitMinutes.value)
+      }
     }
   }
 
   tick()
   countdownInterval = setInterval(tick, 250)
+}
+
+function startGameTimer(gameStartMs: number, limitMinutes: number) {
+  const gameEndMs = gameStartMs + limitMinutes * 60 * 1000
+
+  const tick = () => {
+    const remaining = Math.max(0, Math.ceil((gameEndMs - Date.now()) / 1000))
+    gameTimeRemaining.value = remaining
+    if (remaining <= 0) {
+      if (gameTimerInterval) { clearInterval(gameTimerInterval); gameTimerInterval = null }
+    }
+  }
+
+  tick()
+  gameTimerInterval = setInterval(tick, 500)
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +180,12 @@ function handleSnapshot(data: Record<string, unknown>) {
   if (data.categoryName) categoryName.value = data.categoryName as string
   if (data.categoryEmoji) categoryEmoji.value = data.categoryEmoji as string
   if (data.categoryColor) categoryColor.value = data.categoryColor as string
+
+  // Start game timer if we're joining mid-game (timed mode)
+  if (data.status === 'in_progress' && data.mode === 'timed' && data.gameStartTime && data.timeLimitMinutes) {
+    gameStatus.value = 'in_progress'
+    startGameTimer(new Date(data.gameStartTime as string).getTime(), data.timeLimitMinutes as number)
+  }
 
   const newPlayers = new Map<string, Player>()
   for (const p of (data.players as Array<Record<string, unknown>>) ?? []) {
@@ -218,12 +254,16 @@ function handleGameEvent(event: unknown) {
     case 'times_up':
       gameStatus.value = 'completed'
       if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null }
+      if (gameTimerInterval) { clearInterval(gameTimerInterval); gameTimerInterval = null }
       countdown.value = null
+      gameTimeRemaining.value = 0
       break
     case 'game_cancelled':
       gameStatus.value = 'cancelled'
       if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null }
+      if (gameTimerInterval) { clearInterval(gameTimerInterval); gameTimerInterval = null }
       countdown.value = null
+      gameTimeRemaining.value = null
       break
   }
 }
@@ -246,6 +286,7 @@ onMounted(async () => {
 onUnmounted(() => {
   for (const unsub of unsubscribes) unsub()
   if (countdownInterval) clearInterval(countdownInterval)
+  if (gameTimerInterval) clearInterval(gameTimerInterval)
 })
 </script>
 
@@ -291,6 +332,10 @@ onUnmounted(() => {
 
       <!-- Stats bar -->
       <div v-if="totalPlayers > 0" class="stats-bar">
+        <div v-if="isTimedMode && gameTimeRemaining !== null && gameStatus === 'in_progress'" class="stat-pill stat-pill-timer" :class="{ 'timer-urgent': gameTimeRemaining <= 30 }">
+          <span class="timer-icon">⏱</span>
+          <span class="timer-value">{{ gameTimeFormatted }}</span>
+        </div>
         <div class="stat-pill">
           <span class="stat-num">{{ totalPlayers }}</span>
           <span class="stat-lbl">Players</span>
@@ -594,6 +639,33 @@ onUnmounted(() => {
 
 .stat-pill-gold .stat-num {
   color: var(--cat-color, var(--gold-light));
+}
+
+.stat-pill-timer {
+  border-color: var(--cat-border, rgba(6, 182, 212, 0.3));
+  background: var(--cat-bg, rgba(6, 182, 212, 0.08));
+  gap: 8px;
+  padding: 8px 18px;
+}
+
+.timer-icon { font-size: 16px; }
+
+.timer-value {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--cat-color, var(--cyan-light));
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-urgent {
+  border-color: rgba(244, 63, 94, 0.4);
+  background: rgba(244, 63, 94, 0.08);
+  animation: pulse-glow 1s ease-in-out infinite;
+}
+
+.timer-urgent .timer-value {
+  color: var(--rose);
 }
 
 .stat-lbl {

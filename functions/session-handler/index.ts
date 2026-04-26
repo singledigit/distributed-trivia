@@ -314,6 +314,7 @@ async function handleSubscribe(event: AppSyncEventsLambdaEvent) {
     timeLimitMinutes: metadata.timeLimitMinutes,
     status: metadata.status,
     createdAt: metadata.createdAt,
+    gameStartTime: (metadata as Record<string, unknown>).gameStartTime ?? '',
     players: leaderboard,
   };
 

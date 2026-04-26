@@ -33,6 +33,7 @@ const questionCount = ref(0)
 const categoryName = ref('')
 const categoryEmoji = ref('')
 const categoryColor = ref('')
+const gameMode = ref('')
 
 // Countdown
 const countdownSeconds = ref(0)
@@ -174,6 +175,7 @@ function handlePlayerEvent(event: unknown) {
       categoryName.value = (data.categoryName as string) ?? ''
       categoryEmoji.value = (data.categoryEmoji as string) ?? ''
       categoryColor.value = (data.categoryColor as string) ?? ''
+      gameMode.value = (data.mode as string) ?? ''
       phase.value = 'lobby'
       saveState()
       break
@@ -555,7 +557,7 @@ watch(phase, () => { if (participantId.value) saveState() })
           <span class="cat-emoji">{{ categoryTheme.emoji }}</span>
           <span>{{ categoryName }}</span>
         </div>
-        <div v-if="questionCount" class="info-pill">{{ questionCount }} questions</div>
+        <div v-if="questionCount && gameMode !== 'timed'" class="info-pill">{{ questionCount }} questions</div>
         <div class="waiting-dots">
           <span /><span /><span />
         </div>
@@ -570,12 +572,12 @@ watch(phase, () => { if (participantId.value) saveState() })
       <!-- PLAYING -->
       <div v-else-if="phase === 'playing' && currentQuestion" class="phase-playing">
         <div class="q-header">
-          <div class="progress-track">
+          <div v-if="gameMode !== 'timed'" class="progress-track">
             <div class="progress-fill" :style="{ width: progressPercent + '%' }" />
           </div>
           <div class="q-meta">
             <span v-if="categoryTheme.emoji" class="q-cat-emoji">{{ categoryTheme.emoji }}</span>
-            <span class="q-num">{{ currentQuestion.questionNum }}/{{ currentQuestion.totalQuestions }}</span>
+            <span class="q-num">{{ gameMode === 'timed' ? `Q${currentQuestion.questionNum}` : `${currentQuestion.questionNum}/${currentQuestion.totalQuestions}` }}</span>
             <span :class="['diff-pill', difficultyClass]">{{ difficultyLabel }}</span>
             <span class="pts-pill">{{ currentQuestion.points }} pts</span>
             <span class="score-pill">{{ currentQuestion.currentScore }}</span>

@@ -114,7 +114,7 @@ export const handler = withDurableExecution(
     // Determine how many questions to select
     const targetCount = mode === 'question_count'
       ? questionCount!
-      : Math.min(timeLimitMinutes! * 6, 30); // 6 per minute, max 30
+      : Math.min(timeLimitMinutes! * 10, 50); // 10 per minute, max 50
 
     const selectedQuestions = await context.step('select-questions', async () => {
       return selectBalancedQuestions(questions, Math.min(targetCount, questions.length));
@@ -183,6 +183,7 @@ export const handler = withDurableExecution(
             ExpressionAttributeValues: { ':token': callbackId },
           }));
         },
+        { timeout: { minutes: 30 } }, // Auto-cancel if host doesn't start within 30 min
       );
     } catch (error) {
       if (error instanceof CallbackError) {
@@ -293,11 +294,12 @@ export const handler = withDurableExecution(
           await ddb.send(new UpdateCommand({
             TableName: GAME_TABLE,
             Key: { PK: sessionPK(sessionId), SK: METADATA_SK },
-            UpdateExpression: 'SET #s = :status, odfCallbackToken = :token',
+            UpdateExpression: 'SET #s = :status, odfCallbackToken = :token, gameStartTime = :startTime',
             ExpressionAttributeNames: { '#s': 'status' },
             ExpressionAttributeValues: {
               ':status': 'in_progress',
               ':token': callbackToken,
+              ':startTime': startTime,
             },
           }));
         },

@@ -12,6 +12,7 @@ interface Category {
   categoryId: string
   categoryName: string
   categoryEmoji?: string
+  questionCount?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -31,6 +32,9 @@ const renameValue = ref('')
 
 // Delete
 const deletingId = ref<string | null>(null)
+
+// Expand
+const expandingId = ref<string | null>(null)
 
 const unsubscribers: Array<() => void> = []
 
@@ -87,6 +91,16 @@ function handleCategoryEvent(event: unknown) {
       publish('/categories/default', [{ action: 'list' }]).catch(() => {})
       break
 
+    case 'category_expanded':
+      categoryStatus.value = {
+        type: 'created',
+        name: data.categoryName as string,
+        message: `Added ${data.questionCount} questions (${data.easy}E/${data.medium}M/${data.hard}H)`,
+      }
+      expandingId.value = null
+      publish('/categories/default', [{ action: 'list' }]).catch(() => {})
+      break
+
     case 'category_error':
       categoryStatus.value = {
         type: 'error',
@@ -137,6 +151,12 @@ async function submitRename(categoryId: string) {
 async function deleteCategory(categoryId: string) {
   deletingId.value = categoryId
   await publish('/categories/default', [{ action: 'delete', categoryId }])
+}
+
+async function expandCategory(categoryId: string) {
+  expandingId.value = categoryId
+  categoryStatus.value = null
+  await publish('/categories/default', [{ action: 'expand', categoryId }])
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +234,16 @@ onUnmounted(() => {
             <template v-if="renamingId !== cat.categoryId">
               <span v-if="cat.categoryEmoji" class="cat-emoji">{{ cat.categoryEmoji }}</span>
               <span class="cat-name">{{ cat.categoryName }}</span>
+              <span class="cat-count">{{ cat.questionCount ?? 0 }}q</span>
               <div class="cat-actions">
+                <button
+                  class="act-btn"
+                  title="Add 60 more questions"
+                  :disabled="expandingId === cat.categoryId"
+                  @click="expandCategory(cat.categoryId)"
+                >
+                  {{ expandingId === cat.categoryId ? '⏳' : '➕' }}
+                </button>
                 <button class="act-btn" title="Rename" @click="startRename(cat)">✏️</button>
                 <button
                   class="act-btn act-btn-danger"
@@ -340,6 +369,16 @@ onUnmounted(() => {
 .cat-name { flex: 1; font-size: 15px; font-weight: 500; color: var(--text-primary); }
 
 .cat-emoji { font-size: 18px; flex-shrink: 0; }
+
+.cat-count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
 
 .cat-actions { display: flex; gap: 4px; flex-shrink: 0; }
 
