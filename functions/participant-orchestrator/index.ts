@@ -104,6 +104,15 @@ async function writeActivity(
   });
 }
 
+/** Check if an error is a callback timeout — works both at top-level and inside child contexts */
+function isCallbackTimeout(error: unknown): boolean {
+  if (error instanceof CallbackError) return true;
+  const msg = (error as { message?: string })?.message ?? '';
+  const name = (error as { name?: string })?.name ?? '';
+  return msg.includes('timed out') || msg.includes('Callback') || msg.includes('timeout')
+    || name.includes('CallbackError') || name.includes('ChildContextError');
+}
+
 /** Build a skip/auto-skip QuestionResult */
 function skipResult(question: Question, questionNum: number): QuestionResult {
   return {
@@ -220,10 +229,10 @@ async function processQuestion(
             };
           }
         } catch (error) {
-          if (!(error instanceof CallbackError)) throw error;
+          if (!isCallbackTimeout(error)) throw error;
 
           // Timeout — write activity, send timeout prompt
-          qCtx.logger.info(`Q${questionNum} seq${seq}: TIMEOUT FIRED — CallbackError caught`);
+          qCtx.logger.info(`Q${questionNum} seq${seq}: TIMEOUT FIRED`);
           await writeActivity(qCtx, `activity-seq${seq}-timeout`, pk, participantId, question.questionId, questionNum, seq, 'extended', null, 0);
           seq++;
 
@@ -244,15 +253,22 @@ async function processQuestion(
             if (timeoutResponse.action === 'complete') {
               return { score: 0, result: skipResult(question, questionNum), earlyExit: true };
             }
-            if (timeoutResponse.action === 'skip') {
-              await writeActivity(qCtx, `activity-seq${seq}-skip`, pk, participantId, question.questionId, questionNum, seq, 'skipped', null, 0);
-              return { score: 0, result: skipResult(question, questionNum), earlyExit: false };
+            if (timeoutResponse.action === 'answer' || timeoutResponse.action === 'skip') {
+              const isCorrect = timeoutResponse.action === 'answer' && timeoutResponse.selectedOption === question.correctAnswer;
+              const points = timeoutResponse.action === 'skip' ? 0 : calculateScore(question.difficulty, isCorrect);
+              const activityStatus: ActivityStatus = timeoutResponse.action === 'skip' ? 'skipped' : isCorrect ? 'correct' : 'incorrect';
+              await writeActivity(qCtx, `activity-seq${seq}-resolve`, pk, participantId, question.questionId, questionNum, seq, activityStatus, timeoutResponse.selectedOption ?? null, points);
+              return {
+                score: points,
+                result: { questionNum, questionText: question.questionText, options: question.options, correctAnswer: question.correctAnswer, difficulty: question.difficulty, points, selectedOption: timeoutResponse.selectedOption ?? null, isCorrect, wasSkipped: timeoutResponse.action === 'skip' },
+                earlyExit: false,
+              };
             }
           } catch (innerError) {
-            if (!(innerError instanceof CallbackError)) throw innerError;
+            if (!isCallbackTimeout(innerError)) throw innerError;
 
             // Double timeout — auto-skip
-            qCtx.logger.info(`Double timeout, auto-skipping`);
+            qCtx.logger.info(`Q${questionNum}: Double timeout, auto-skipping`);
             await writeActivity(qCtx, `activity-seq${seq}-autoskip`, pk, participantId, question.questionId, questionNum, seq, 'skipped', null, 0);
             return { score: 0, result: skipResult(question, questionNum), earlyExit: false };
           }
@@ -419,11 +435,11 @@ export const handler = withDurableExecution(
         await context.step('publish-completion-early', async () => {
           await publishToChannel({
             channel: playerChannel,
-            events: [{ type: 'game_complete', totalScore, questionsAnswered: qIndex, totalQuestions: questions.length, questionResults }],
+            events: [{ type: 'game_complete', totalScore, questionsAnswered: qIndex + 1, totalQuestions: questions.length, questionResults }],
           });
         });
 
-        return { status: 'completed', totalScore, questionsAnswered: qIndex };
+        return { status: 'completed', totalScore, questionsAnswered: qIndex + 1 };
       }
     }
 
