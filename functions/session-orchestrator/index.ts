@@ -86,15 +86,22 @@ export const handler = withDurableExecution(
     // Step 1: Query questions and build session
     // ---------------------------------------------------------------
     const questions = await context.step('query-questions', async () => {
-      const result = await ddb.send(new QueryCommand({
-        TableName: QUESTIONS_TABLE,
-        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-        ExpressionAttributeValues: {
-          ':pk': categoryPK(categoryId),
-          ':prefix': QUESTION_PREFIX,
-        },
-      }));
-      return (result.Items ?? []) as Question[];
+      const items: Question[] = [];
+      let lastKey: Record<string, unknown> | undefined;
+      do {
+        const result = await ddb.send(new QueryCommand({
+          TableName: QUESTIONS_TABLE,
+          KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+          ExpressionAttributeValues: {
+            ':pk': categoryPK(categoryId),
+            ':prefix': QUESTION_PREFIX,
+          },
+          ExclusiveStartKey: lastKey,
+        }));
+        if (result.Items) items.push(...(result.Items as Question[]));
+        lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+      } while (lastKey);
+      return items;
     });
 
     // Read category name and emoji for theming
@@ -119,6 +126,18 @@ export const handler = withDurableExecution(
     const selectedQuestions = await context.step('select-questions', async () => {
       return selectBalancedQuestions(questions, Math.min(targetCount, questions.length));
     });
+
+    // Guard: must have at least 1 question
+    if (selectedQuestions.length === 0) {
+      context.logger.error('No questions available for category', { categoryId });
+      await context.step('cancel-no-questions', async () => {
+        await publishToChannel({
+          channel: `admin/${sessionId}`,
+          events: [{ type: 'error', message: 'No questions available for this category' }],
+        });
+      });
+      return { sessionId, status: 'failed', reason: 'no_questions' };
+    }
 
     context.logger.info('Selected questions', { count: selectedQuestions.length });
 
@@ -188,7 +207,7 @@ export const handler = withDurableExecution(
     } catch (error) {
       if (error instanceof CallbackError) {
         context.logger.error('Callback error while waiting for start/cancel', { error: String(error) });
-        // Treat as cancel
+        // Treat as cancel (lobby timeout or error)
         await context.step('update-status-error', async () => {
           await ddb.send(new UpdateCommand({
             TableName: GAME_TABLE,
@@ -197,6 +216,12 @@ export const handler = withDurableExecution(
             ExpressionAttributeNames: { '#s': 'status' },
             ExpressionAttributeValues: { ':status': 'cancelled' },
           }));
+        });
+        await context.step('broadcast-lobby-timeout', async () => {
+          await publishToChannel({
+            channel: `game/${sessionId}`,
+            events: [{ type: 'game_cancelled', sessionId, reason: 'lobby_timeout' }],
+          });
         });
         return { sessionId, status: 'cancelled', reason: 'callback_error' };
       }
@@ -236,16 +261,42 @@ export const handler = withDurableExecution(
 
     // Step: Scan PLAYER# records for callback tokens
     const players = await context.step('scan-players', async () => {
-      const result = await ddb.send(new QueryCommand({
-        TableName: GAME_TABLE,
-        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-        ExpressionAttributeValues: {
-          ':pk': sessionPK(sessionId),
-          ':prefix': PLAYER_PREFIX,
-        },
-      }));
-      return (result.Items ?? []) as PlayerRecord[];
+      const items: PlayerRecord[] = [];
+      let lastKey: Record<string, unknown> | undefined;
+      do {
+        const result = await ddb.send(new QueryCommand({
+          TableName: GAME_TABLE,
+          KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+          ExpressionAttributeValues: {
+            ':pk': sessionPK(sessionId),
+            ':prefix': PLAYER_PREFIX,
+          },
+          ExclusiveStartKey: lastKey,
+        }));
+        if (result.Items) items.push(...(result.Items as PlayerRecord[]));
+        lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+      } while (lastKey);
+      return items;
     });
+
+    // Guard: cannot start with zero players
+    if (players.length === 0) {
+      context.logger.warn('No players joined — cancelling game');
+      await context.step('cancel-no-players', async () => {
+        await ddb.send(new UpdateCommand({
+          TableName: GAME_TABLE,
+          Key: { PK: sessionPK(sessionId), SK: METADATA_SK },
+          UpdateExpression: 'SET #s = :status',
+          ExpressionAttributeNames: { '#s': 'status' },
+          ExpressionAttributeValues: { ':status': 'cancelled' },
+        }));
+        await publishToChannel({
+          channel: `game/${sessionId}`,
+          events: [{ type: 'game_cancelled', sessionId, reason: 'no_players' }],
+        });
+      });
+      return { sessionId, status: 'cancelled', reason: 'no_players' };
+    }
 
     // Step: Compute start time (now + 5 seconds)
     const startTime = await context.step('compute-start-time', async () => {

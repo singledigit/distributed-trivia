@@ -102,6 +102,9 @@ function handleAdminSessionEvent(event: unknown) {
   const data = event as Record<string, unknown>
   if (data.type === 'snapshot') restoreFromSnapshot(data)
   if (data.type === 'session_created') { /* already in lobby */ }
+  if (data.type === 'error' && data.message) {
+    createError.value = data.message as string
+  }
 }
 
 function handleLeaderboardEvent(event: unknown) {

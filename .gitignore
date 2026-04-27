@@ -33,3 +33,5 @@ samconfig.toml
 # Dev/test scripts
 scripts/kill-durable.mjs
 scripts/test-*.mjs
+debug/
+e2e/

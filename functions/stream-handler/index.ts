@@ -43,42 +43,58 @@ function statusDotColor(status: ActivityStatus): string {
 }
 
 /**
- * Query all PLAYER# records for a session.
+ * Query all PLAYER# records for a session (paginated).
  */
 async function queryPlayers(sessionId: string): Promise<PlayerRecord[]> {
-  const result = await ddb.send(
-    new QueryCommand({
-      TableName: TABLE_NAME,
-      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-      ExpressionAttributeValues: {
-        ':pk': sessionPK(sessionId),
-        ':prefix': PLAYER_PREFIX,
-      },
-    }),
-  );
+  const items: PlayerRecord[] = [];
+  let lastKey: Record<string, unknown> | undefined;
 
-  return (result.Items ?? []) as PlayerRecord[];
+  do {
+    const result = await ddb.send(
+      new QueryCommand({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+        ExpressionAttributeValues: {
+          ':pk': sessionPK(sessionId),
+          ':prefix': PLAYER_PREFIX,
+        },
+        ExclusiveStartKey: lastKey,
+      }),
+    );
+    if (result.Items) items.push(...(result.Items as PlayerRecord[]));
+    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+
+  return items;
 }
 
 /**
- * Query all ACTIVITY# records for a specific player in a session.
+ * Query all ACTIVITY# records for a specific player in a session (paginated).
  */
 async function queryPlayerActivities(
   sessionId: string,
   participantId: string,
 ): Promise<ActivityRecord[]> {
-  const result = await ddb.send(
-    new QueryCommand({
-      TableName: TABLE_NAME,
-      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-      ExpressionAttributeValues: {
-        ':pk': sessionPK(sessionId),
-        ':prefix': `${ACTIVITY_PREFIX}${participantId}#`,
-      },
-    }),
-  );
+  const items: ActivityRecord[] = [];
+  let lastKey: Record<string, unknown> | undefined;
 
-  return (result.Items ?? []) as ActivityRecord[];
+  do {
+    const result = await ddb.send(
+      new QueryCommand({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+        ExpressionAttributeValues: {
+          ':pk': sessionPK(sessionId),
+          ':prefix': `${ACTIVITY_PREFIX}${participantId}#`,
+        },
+        ExclusiveStartKey: lastKey,
+      }),
+    );
+    if (result.Items) items.push(...(result.Items as ActivityRecord[]));
+    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+
+  return items;
 }
 
 /**

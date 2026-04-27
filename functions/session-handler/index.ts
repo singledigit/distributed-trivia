@@ -176,15 +176,22 @@ async function handleCreate(payload: CreatePayload) {
 // start — read ODF callback token, send start callback
 // ---------------------------------------------------------------------------
 
-/** Read the ODF callback token from METADATA and send a start signal. */
+/** Read the ODF callback token from METADATA and send a start signal. Retries if token not yet available. */
 async function handleStart(sessionId: string) {
-  const metadata = await getSessionMetadata(sessionId);
+  // Retry up to 3 times with 500ms backoff — token may not be written yet
+  let metadata: SessionMetadata | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    metadata = await getSessionMetadata(sessionId);
+    if (metadata?.odfCallbackToken) break;
+    if (attempt < 2) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+  }
+
   if (!metadata) {
     return { type: 'error', message: 'Session not found' };
   }
 
   if (!metadata.odfCallbackToken) {
-    return { type: 'error', message: 'Session is not ready to start (no callback token)' };
+    return { type: 'error', message: 'Session is not ready to start yet — try again in a moment' };
   }
 
   if (metadata.status !== 'waiting') {

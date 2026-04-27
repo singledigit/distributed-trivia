@@ -22,6 +22,7 @@ type GamePhase =
   | 'playing'
   | 'timeout'
   | 'feedback'
+  | 'reconnecting'
   | 'waiting_done'
   | 'game_over'
 
@@ -366,10 +367,10 @@ let feedbackTimer: ReturnType<typeof setTimeout> | null = null
 function startFeedbackTimeout() {
   clearFeedbackTimeout()
   feedbackTimer = setTimeout(() => {
-    // No response after 8s — fall back to current question so they can retry
-    if (phase.value === 'feedback' && currentQuestion.value) {
-      console.warn('[player] Feedback timeout — returning to question')
-      phase.value = 'playing'
+    // No response after 8s — enter reconnecting state and wait for POD to catch up
+    if (phase.value === 'feedback') {
+      console.warn('[player] Feedback timeout — waiting for POD to send next event')
+      phase.value = 'reconnecting'
     }
   }, 8000)
 }
@@ -493,7 +494,7 @@ onMounted(async () => {
       phase.value = 'join'
       return
     } else {
-      phase.value = stored.phase === 'playing' || stored.phase === 'feedback' ? 'playing' : stored.phase
+      phase.value = stored.phase === 'playing' || stored.phase === 'feedback' || stored.phase === 'reconnecting' ? 'reconnecting' : stored.phase
       if (stored.currentQuestion) currentQuestion.value = stored.currentQuestion
     }
     await subscribeToChannels()
@@ -605,6 +606,16 @@ watch(phase, () => { if (participantId.value) saveState() })
       <div v-else-if="phase === 'feedback'" class="phase-feedback">
         <div class="feedback-loader" />
         <p class="feedback-text">Submitting…</p>
+      </div>
+
+      <!-- RECONNECTING — waiting for POD to send next event -->
+      <div v-else-if="phase === 'reconnecting'" class="phase-reconnecting">
+        <div class="reconnect-icon">📡</div>
+        <h1>Catching up…</h1>
+        <p class="reconnect-sub">Waiting for the next question</p>
+        <div class="waiting-dots">
+          <span /><span /><span />
+        </div>
       </div>
 
       <!-- TIMEOUT -->
@@ -1219,6 +1230,30 @@ watch(phase, () => { if (participantId.value) saveState() })
 .feedback-text {
   color: var(--text-secondary);
   font-size: 15px;
+}
+
+/* ---- RECONNECTING ---- */
+
+.phase-reconnecting {
+  text-align: center;
+  animation: scale-in 0.3s ease-out;
+}
+
+.reconnect-icon {
+  font-size: 48px;
+  margin-bottom: 8px;
+}
+
+.phase-reconnecting h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.reconnect-sub {
+  color: var(--text-secondary);
+  font-size: 15px;
+  margin-bottom: 20px;
 }
 
 /* ---- TIMEOUT ---- */

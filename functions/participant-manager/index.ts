@@ -204,13 +204,21 @@ async function handleCallback(
 ): Promise<Record<string, unknown>> {
   const { action, callbackToken, ...data } = payload;
 
-  // Send callback to POD via SendDurableExecutionCallbackSuccess
-  await lambda.send(
-    new SendDurableExecutionCallbackSuccessCommand({
-      CallbackId: callbackToken,
-      Result: new TextEncoder().encode(JSON.stringify({ action, ...data })),
-    }),
-  );
+  try {
+    await lambda.send(
+      new SendDurableExecutionCallbackSuccessCommand({
+        CallbackId: callbackToken,
+        Result: new TextEncoder().encode(JSON.stringify({ action, ...data })),
+      }),
+    );
+  } catch (err: unknown) {
+    const errName = (err as { name?: string })?.name;
+    if (errName === 'CallbackAlreadyCompletedException' || errName === 'CallbackTimeoutException') {
+      // Stale or expired token — the POD has moved on
+      return { type: 'error', message: 'stale_token' };
+    }
+    throw err;
+  }
 
   return { type: 'ack', action };
 }

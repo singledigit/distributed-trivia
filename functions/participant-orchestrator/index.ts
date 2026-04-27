@@ -139,6 +139,7 @@ async function processQuestion(
     `question-${questionNum}`,
     async (qCtx) => {
       let seq = 1;
+      qCtx.logger.info(`Entered child context for Q${questionNum}`);
 
       /** Publish the question to the player with a callback token */
       const sendQuestion = async (callbackToken: string) => {
@@ -162,12 +163,18 @@ async function processQuestion(
       // Question loop — handles answer, skip, more_time, timeout, and game-end
       while (true) {
         try {
+          qCtx.logger.info(`Q${questionNum} seq${seq}: entering waitForCallback`);
           const responseRaw = await qCtx.waitForCallback<CallbackPayload>(
             `wait-seq${seq}`,
-            async (callbackToken) => { await sendQuestion(callbackToken); },
-            { timeout: { seconds: 30 } },
+            async (callbackToken) => {
+              qCtx.logger.info(`Q${questionNum} seq${seq}: setup fn called, sending question`);
+              await sendQuestion(callbackToken);
+              qCtx.logger.info(`Q${questionNum} seq${seq}: question sent`);
+            },
+            { timeout: { seconds: 15 } },
           );
           const response = parseCallback<CallbackPayload>(responseRaw);
+          qCtx.logger.info(`Q${questionNum} seq${seq}: callback received`, { action: response.action });
 
           // Game ended externally (timed mode — "TIMES UP")
           if (response.action === 'complete') {
@@ -183,6 +190,13 @@ async function processQuestion(
 
           // Player answered or skipped
           if (response.action === 'answer' || response.action === 'skip') {
+            // Validate the selected option is actually one of the choices
+            if (response.action === 'answer' && response.selectedOption && !question.options.includes(response.selectedOption)) {
+              qCtx.logger.warn('Invalid answer option submitted', { selectedOption: response.selectedOption });
+              seq++;
+              continue; // Re-send the question with a new callback token
+            }
+
             const isCorrect = response.action === 'answer' && response.selectedOption === question.correctAnswer;
             const points = response.action === 'skip' ? 0 : calculateScore(question.difficulty, isCorrect);
             const activityStatus: ActivityStatus = response.action === 'skip' ? 'skipped' : isCorrect ? 'correct' : 'incorrect';
@@ -209,7 +223,7 @@ async function processQuestion(
           if (!(error instanceof CallbackError)) throw error;
 
           // Timeout — write activity, send timeout prompt
-          qCtx.logger.info(`Timed out on seq ${seq}`);
+          qCtx.logger.info(`Q${questionNum} seq${seq}: TIMEOUT FIRED — CallbackError caught`);
           await writeActivity(qCtx, `activity-seq${seq}-timeout`, pk, participantId, question.questionId, questionNum, seq, 'extended', null, 0);
           seq++;
 
@@ -222,7 +236,7 @@ async function processQuestion(
                   events: [{ type: 'timeout_prompt', questionNum, questionId: question.questionId, callbackToken }],
                 });
               },
-              { timeout: { seconds: 30 } },
+              { timeout: { seconds: 15 } },
             );
             const timeoutResponse = parseCallback<CallbackPayload>(timeoutRaw);
 
@@ -302,26 +316,46 @@ export const handler = withDurableExecution(
       }));
     });
 
-    // Step 3: Publish join ack
-    await context.step('publish-join-ack', async () => {
-      await publishToChannel({
-        channel: playerChannel,
-        events: [{ type: 'join_ack', sessionId, participantId, displayName, questionCount: questions.length, mode: categoryMeta.mode, categoryName: categoryMeta.categoryName, categoryEmoji: categoryMeta.categoryEmoji, categoryColor: categoryMeta.categoryColor }],
-      });
-    });
-
-    // Step 4: Wait for game start signal from ODF
-    const startPayloadRaw = await context.waitForCallback<string>(
+    // Step 3: Wait for game start — register callback token BEFORE publishing join_ack
+    // This ensures the podCallbackToken is in DDB before the host can click Start
+    let startPayloadRaw: string;
+    try {
+    startPayloadRaw = await context.waitForCallback<string>(
       'wait-for-start',
       async (callbackToken) => {
+        // Write callback token to PLAYER# record so ODF can find it
         await ddb.send(new UpdateCommand({
           TableName: TABLE,
           Key: { PK: pk, SK: playerSK(participantId) },
           UpdateExpression: 'SET podCallbackToken = :token',
           ExpressionAttributeValues: { ':token': callbackToken },
         }));
+
+        // NOW publish join_ack — token is safely in DDB
+        await publishToChannel({
+          channel: playerChannel,
+          events: [{ type: 'join_ack', sessionId, participantId, displayName, questionCount: questions.length, mode: categoryMeta.mode, categoryName: categoryMeta.categoryName, categoryEmoji: categoryMeta.categoryEmoji, categoryColor: categoryMeta.categoryColor }],
+        });
       },
+      { timeout: { minutes: 35 } }, // Must exceed ODF's 30-min lobby timeout
     );
+    } catch (error) {
+      if (error instanceof CallbackError) {
+        // Lobby timed out — game was never started. Clean up and exit.
+        context.logger.info('Wait-for-start timed out — session likely cancelled');
+        await context.step('write-abandoned-status', async () => {
+          await ddb.send(new UpdateCommand({
+            TableName: TABLE,
+            Key: { PK: pk, SK: playerSK(participantId) },
+            UpdateExpression: 'SET #s = :status',
+            ExpressionAttributeNames: { '#s': 'status' },
+            ExpressionAttributeValues: { ':status': 'completed' as PlayerStatus },
+          }));
+        });
+        return { status: 'abandoned', participantId };
+      }
+      throw error;
+    }
 
     const startPayload = parseCallback<CallbackPayload>(startPayloadRaw);
     context.logger.info('Start payload received', { startTime: startPayload.startTime });
