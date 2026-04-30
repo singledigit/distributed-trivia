@@ -198,8 +198,8 @@ export const handler = withDurableExecution(
           await ddb.send(new UpdateCommand({
             TableName: GAME_TABLE,
             Key: { PK: sessionPK(sessionId), SK: METADATA_SK },
-            UpdateExpression: 'SET odfCallbackToken = :token',
-            ExpressionAttributeValues: { ':token': callbackId },
+            UpdateExpression: 'SET odfCallbackToken = :token, sessionReadyAt = :readyAt',
+            ExpressionAttributeValues: { ':token': callbackId, ':readyAt': new Date().toISOString() },
           }));
         },
         { timeout: { minutes: 30 } }, // Auto-cancel if host doesn't start within 30 min

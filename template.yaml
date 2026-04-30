@@ -17,6 +17,8 @@ Globals:
     MemorySize: 512
     Timeout: 30
     Tracing: Active
+    Layers:
+      - arn:aws:lambda:us-west-2:580247275435:layer:LambdaInsightsExtension-Arm64:31
     Environment:
       Variables:
         GAME_TABLE_NAME: !Ref GameTable
@@ -407,6 +409,7 @@ Resources:
       Handler: index.handler
       CodeUri: functions/session-orchestrator/
       Timeout: 900
+      MemorySize: 1024
       DurableConfig:
         ExecutionTimeout: 86400
         RetentionPeriodInDays: 1
@@ -417,6 +420,7 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref GameTable
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicDurableExecutionRolePolicy
+        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
         - LambdaInvokePolicy:
             FunctionName: !Ref ParticipantOrchestratorFunction
         - Version: '2012-10-17'
@@ -447,6 +451,7 @@ Resources:
       Handler: index.handler
       CodeUri: functions/participant-orchestrator/
       Timeout: 900
+      MemorySize: 1024
       DurableConfig:
         ExecutionTimeout: 86400
         RetentionPeriodInDays: 1
@@ -455,6 +460,7 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref GameTable
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicDurableExecutionRolePolicy
+        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -513,6 +519,7 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref QuestionsTable
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicDurableExecutionRolePolicy
+        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
         - Version: '2012-10-17'
           Statement:
             - Effect: Allow

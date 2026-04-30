@@ -12,6 +12,8 @@ import {
   sessionPK,
   validateDisplayName,
   ttl24h,
+  timed,
+  emitLatency,
 } from './shared/index';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -175,17 +177,21 @@ async function handleJoin(
   }
 
   // Reservation succeeded — start POD async
-  await lambda.send(
-    new InvokeCommand({
-      FunctionName: POD_FUNCTION_ARN,
-      InvocationType: InvocationType.Event,
-      Payload: JSON.stringify({
-        sessionId,
-        participantId,
-        displayName: trimmedName,
+  await timed('lambda-invoke-pod', { sessionId, participantId }, () =>
+    lambda.send(
+      new InvokeCommand({
+        FunctionName: POD_FUNCTION_ARN,
+        InvocationType: InvocationType.Event,
+        Payload: JSON.stringify({
+          sessionId,
+          participantId,
+          displayName: trimmedName,
+        }),
       }),
-    }),
+    ),
   );
+
+  emitLatency('JoinPlayer', 0, 'participant-manager');
 
   return {
     type: 'joined',

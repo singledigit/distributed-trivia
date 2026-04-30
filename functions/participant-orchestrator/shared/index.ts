@@ -26,6 +26,8 @@ export type { ValidationResult } from './validation';
 
 export { publishToChannel } from './appsync';
 
+export { timed, emitMetric, emitLatency } from './timing';
+
 export type {
   GameMode,
   Difficulty,

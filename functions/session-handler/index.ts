@@ -17,6 +17,8 @@ import {
   validateQuestionCount,
   validateTimeLimit,
   publishToChannel,
+  timed,
+  emitLatency,
 } from './shared/index';
 import type {
   AppSyncEventsLambdaEvent,
@@ -119,11 +121,11 @@ async function handleCreate(payload: CreatePayload) {
   const { categoryId, mode, questionCount, timeLimitMinutes } = payload;
 
   // Validate category exists
-  const categoryResult = await ddb.send(
-    new GetCommand({
+  const categoryResult = await timed('ddb-get-category', { sessionHandler: true, categoryId }, () =>
+    ddb.send(new GetCommand({
       TableName: QUESTIONS_TABLE,
       Key: { PK: categoryPK(categoryId), SK: METADATA_SK },
-    }),
+    })),
   );
 
   if (!categoryResult.Item) {
@@ -155,8 +157,8 @@ async function handleCreate(payload: CreatePayload) {
   const sessionId = generateUlid();
 
   // Invoke ODF async (InvocationType: Event)
-  await lambda.send(
-    new InvokeCommand({
+  await timed('lambda-invoke-odf', { sessionId }, () =>
+    lambda.send(new InvokeCommand({
       FunctionName: ODF_FUNCTION_ARN,
       InvocationType: InvocationType.Event,
       Payload: JSON.stringify({
@@ -166,8 +168,10 @@ async function handleCreate(payload: CreatePayload) {
         questionCount: mode === 'question_count' ? questionCount : undefined,
         timeLimitMinutes: mode === 'timed' ? timeLimitMinutes : undefined,
       }),
-    }),
+    })),
   );
+
+  emitLatency('CreateSession', 0, 'session-handler');
 
   return { type: 'ack', sessionId };
 }
@@ -307,6 +311,13 @@ async function handleSubscribe(event: AppSyncEventsLambdaEvent) {
 
   // Compute leaderboard state
   const leaderboard = computeLeaderboard(players, activities);
+
+  // Emit create-to-ready latency metric if available
+  const sessionReadyAt = (metadata as Record<string, unknown>).sessionReadyAt as string | undefined;
+  if (metadata.createdAt && sessionReadyAt) {
+    const createToReady = new Date(sessionReadyAt).getTime() - new Date(metadata.createdAt).getTime();
+    emitLatency('CreateToReady', createToReady, 'session-handler');
+  }
 
   // Build snapshot
   const snapshot = {
