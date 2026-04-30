@@ -17,7 +17,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
-    { path: '/controller', name: 'admin', component: AdminView, beforeEnter: requireAuth },
+    { path: '/controller', name: 'admin', component: AdminView },
     { path: '/categories', name: 'categories', component: CategoriesView, beforeEnter: requireAuth },
     { path: '/play/:sessionId', name: 'player', component: PlayerView },
     { path: '/leaderboard/:sessionId', name: 'leaderboard', component: LeaderboardView },
