@@ -1,8 +1,8 @@
 import type { DynamoDBStreamEvent, DynamoDBBatchResponse, DynamoDBRecord } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
-import { publishToChannel, sessionPK, PLAYER_PREFIX, ACTIVITY_PREFIX } from './shared/index';
+import { publishToChannel, sessionPK, PLAYER_PREFIX, ACTIVITY_PREFIX, paginatedQuery } from './shared/index';
 import type { PlayerRecord, ActivityRecord, ActivityStatus } from './shared/index';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -46,55 +46,31 @@ function statusDotColor(status: ActivityStatus): string {
  * Query all PLAYER# records for a session (paginated).
  */
 async function queryPlayers(sessionId: string): Promise<PlayerRecord[]> {
-  const items: PlayerRecord[] = [];
-  let lastKey: Record<string, unknown> | undefined;
-
-  do {
-    const result = await ddb.send(
-      new QueryCommand({
-        TableName: TABLE_NAME,
-        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-        ExpressionAttributeValues: {
-          ':pk': sessionPK(sessionId),
-          ':prefix': PLAYER_PREFIX,
-        },
-        ExclusiveStartKey: lastKey,
-      }),
-    );
-    if (result.Items) items.push(...(result.Items as PlayerRecord[]));
-    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-  } while (lastKey);
-
-  return items;
+  return paginatedQuery<PlayerRecord>(ddb, {
+    TableName: TABLE_NAME,
+    KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+    ExpressionAttributeValues: {
+      ':pk': sessionPK(sessionId),
+      ':prefix': PLAYER_PREFIX,
+    },
+  });
 }
 
 /**
- * Query all ACTIVITY# records for a specific player in a session (paginated).
+ * Query all ACTIVITY# records for a specific player in a session.
  */
 async function queryPlayerActivities(
   sessionId: string,
   participantId: string,
 ): Promise<ActivityRecord[]> {
-  const items: ActivityRecord[] = [];
-  let lastKey: Record<string, unknown> | undefined;
-
-  do {
-    const result = await ddb.send(
-      new QueryCommand({
-        TableName: TABLE_NAME,
-        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-        ExpressionAttributeValues: {
-          ':pk': sessionPK(sessionId),
-          ':prefix': `${ACTIVITY_PREFIX}${participantId}#`,
-        },
-        ExclusiveStartKey: lastKey,
-      }),
-    );
-    if (result.Items) items.push(...(result.Items as ActivityRecord[]));
-    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-  } while (lastKey);
-
-  return items;
+  return paginatedQuery<ActivityRecord>(ddb, {
+    TableName: TABLE_NAME,
+    KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+    ExpressionAttributeValues: {
+      ':pk': sessionPK(sessionId),
+      ':prefix': `${ACTIVITY_PREFIX}${participantId}#`,
+    },
+  });
 }
 
 /**

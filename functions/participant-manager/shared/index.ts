@@ -42,3 +42,5 @@ export type {
   CategoryMetadata,
   AppSyncEventsLambdaEvent,
 } from './types';
+
+export { paginatedQuery } from './ddb';

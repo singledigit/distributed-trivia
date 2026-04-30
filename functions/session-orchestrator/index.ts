@@ -1,6 +1,6 @@
 import { withDurableExecution, DurableContext, CallbackError } from '@aws/durable-execution-sdk-js';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { LambdaClient, SendDurableExecutionCallbackSuccessCommand } from '@aws-sdk/client-lambda';
 import {
   sessionPK,
@@ -11,6 +11,7 @@ import {
   PLAYER_PREFIX,
   ttl24h,
   publishToChannel,
+  paginatedQuery,
 } from './shared/index';
 import type { Question, GameMode, Difficulty, SessionMetadata, SessionPackage, PlayerRecord } from './shared/index';
 
@@ -35,6 +36,19 @@ const lambda = new LambdaClient({});
 
 const GAME_TABLE = process.env.GAME_TABLE_NAME!;
 const QUESTIONS_TABLE = process.env.QUESTIONS_TABLE_NAME!;
+
+// --- Helpers ---
+
+/** Update the session METADATA status field */
+async function updateSessionStatus(sid: string, status: string) {
+  await ddb.send(new UpdateCommand({
+    TableName: GAME_TABLE,
+    Key: { PK: sessionPK(sid), SK: METADATA_SK },
+    UpdateExpression: 'SET #s = :status',
+    ExpressionAttributeNames: { '#s': 'status' },
+    ExpressionAttributeValues: { ':status': status },
+  }));
+}
 
 // --- Question selection helpers ---
 
@@ -92,22 +106,14 @@ export const handler = withDurableExecution(
     // Step 1: Query questions and build session
     // ---------------------------------------------------------------
     const questions = await context.step('query-questions', async () => {
-      const items: Question[] = [];
-      let lastKey: Record<string, unknown> | undefined;
-      do {
-        const result = await ddb.send(new QueryCommand({
-          TableName: QUESTIONS_TABLE,
-          KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-          ExpressionAttributeValues: {
-            ':pk': categoryPK(categoryId),
-            ':prefix': QUESTION_PREFIX,
-          },
-          ExclusiveStartKey: lastKey,
-        }));
-        if (result.Items) items.push(...(result.Items as Question[]));
-        lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-      } while (lastKey);
-      return items;
+      return paginatedQuery<Question>(ddb, {
+        TableName: QUESTIONS_TABLE,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+        ExpressionAttributeValues: {
+          ':pk': categoryPK(categoryId),
+          ':prefix': QUESTION_PREFIX,
+        },
+      });
     });
 
     // Read category name and emoji for theming
@@ -216,13 +222,7 @@ export const handler = withDurableExecution(
         context.logger.error('Callback error while waiting for start/cancel', { error: String(error) });
         // Treat as cancel (lobby timeout or error)
         await context.step('update-status-error', async () => {
-          await ddb.send(new UpdateCommand({
-            TableName: GAME_TABLE,
-            Key: { PK: sessionPK(sessionId), SK: METADATA_SK },
-            UpdateExpression: 'SET #s = :status',
-            ExpressionAttributeNames: { '#s': 'status' },
-            ExpressionAttributeValues: { ':status': 'cancelled' },
-          }));
+          await updateSessionStatus(sessionId, 'cancelled');
         });
         await context.step('broadcast-lobby-timeout', async () => {
           await publishToChannel({
@@ -249,13 +249,7 @@ export const handler = withDurableExecution(
       });
 
       await context.step('update-status-cancelled', async () => {
-        await ddb.send(new UpdateCommand({
-          TableName: GAME_TABLE,
-          Key: { PK: sessionPK(sessionId), SK: METADATA_SK },
-          UpdateExpression: 'SET #s = :status',
-          ExpressionAttributeNames: { '#s': 'status' },
-          ExpressionAttributeValues: { ':status': 'cancelled' },
-        }));
+        await updateSessionStatus(sessionId, 'cancelled');
       });
 
       return { sessionId, status: 'cancelled' };
@@ -268,35 +262,21 @@ export const handler = withDurableExecution(
 
     // Step: Scan PLAYER# records for callback tokens
     const players = await context.step('scan-players', async () => {
-      const items: PlayerRecord[] = [];
-      let lastKey: Record<string, unknown> | undefined;
-      do {
-        const result = await ddb.send(new QueryCommand({
-          TableName: GAME_TABLE,
-          KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-          ExpressionAttributeValues: {
-            ':pk': sessionPK(sessionId),
-            ':prefix': PLAYER_PREFIX,
-          },
-          ExclusiveStartKey: lastKey,
-        }));
-        if (result.Items) items.push(...(result.Items as PlayerRecord[]));
-        lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-      } while (lastKey);
-      return items;
+      return paginatedQuery<PlayerRecord>(ddb, {
+        TableName: GAME_TABLE,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+        ExpressionAttributeValues: {
+          ':pk': sessionPK(sessionId),
+          ':prefix': PLAYER_PREFIX,
+        },
+      });
     });
 
     // Guard: cannot start with zero players
     if (players.length === 0) {
       context.logger.warn('No players joined — cancelling game');
       await context.step('cancel-no-players', async () => {
-        await ddb.send(new UpdateCommand({
-          TableName: GAME_TABLE,
-          Key: { PK: sessionPK(sessionId), SK: METADATA_SK },
-          UpdateExpression: 'SET #s = :status',
-          ExpressionAttributeNames: { '#s': 'status' },
-          ExpressionAttributeValues: { ':status': 'cancelled' },
-        }));
+        await updateSessionStatus(sessionId, 'cancelled');
         await publishToChannel({
           channel: `game/${sessionId}`,
           events: [{ type: 'game_cancelled', sessionId, reason: 'no_players' }],
@@ -390,13 +370,7 @@ export const handler = withDurableExecution(
       });
 
       await context.step('update-status-cancelled-during-game', async () => {
-        await ddb.send(new UpdateCommand({
-          TableName: GAME_TABLE,
-          Key: { PK: sessionPK(sessionId), SK: METADATA_SK },
-          UpdateExpression: 'SET #s = :status',
-          ExpressionAttributeNames: { '#s': 'status' },
-          ExpressionAttributeValues: { ':status': 'cancelled' },
-        }));
+        await updateSessionStatus(sessionId, 'cancelled');
       });
 
       return { sessionId, status: 'cancelled' };
@@ -414,13 +388,7 @@ export const handler = withDurableExecution(
     // Game end: update status to completed
     // ---------------------------------------------------------------
     await context.step('update-status-completed', async () => {
-      await ddb.send(new UpdateCommand({
-        TableName: GAME_TABLE,
-        Key: { PK: sessionPK(sessionId), SK: METADATA_SK },
-        UpdateExpression: 'SET #s = :status',
-        ExpressionAttributeNames: { '#s': 'status' },
-        ExpressionAttributeValues: { ':status': 'completed' },
-      }));
+      await updateSessionStatus(sessionId, 'completed');
     });
 
     context.logger.info('Game completed', { sessionId });

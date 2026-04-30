@@ -10,7 +10,6 @@ import {
   DynamoDBDocumentClient,
   ScanCommand,
   UpdateCommand,
-  QueryCommand,
   BatchWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import {
@@ -19,7 +18,7 @@ import {
   InvocationType,
 } from '@aws-sdk/client-lambda';
 import type { AppSyncEventsLambdaEvent } from './shared/index';
-import { categoryPK, METADATA_SK, QUESTION_PREFIX } from './shared/index';
+import { categoryPK, METADATA_SK, QUESTION_PREFIX, paginatedQuery } from './shared/index';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const lambda = new LambdaClient({});
@@ -208,20 +207,12 @@ async function handleDelete(payload: CategoryPayload) {
   const pk = categoryPK(categoryId);
 
   // Query all records for this category
-  const items: Array<{ PK: string; SK: string }> = [];
-  let lastKey: Record<string, unknown> | undefined;
-
-  do {
-    const result = await ddb.send(new QueryCommand({
-      TableName: QUESTIONS_TABLE,
-      KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': pk },
-      ProjectionExpression: 'PK, SK',
-      ExclusiveStartKey: lastKey,
-    }));
-    if (result.Items) items.push(...(result.Items as Array<{ PK: string; SK: string }>));
-    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-  } while (lastKey);
+  const items = await paginatedQuery<{ PK: string; SK: string }>(ddb, {
+    TableName: QUESTIONS_TABLE,
+    KeyConditionExpression: 'PK = :pk',
+    ExpressionAttributeValues: { ':pk': pk },
+    ProjectionExpression: 'PK, SK',
+  });
 
   if (items.length === 0) return { type: 'error', message: 'Category not found' };
 
@@ -262,20 +253,12 @@ async function handleExpand(payload: CategoryPayload) {
   if (!metadata) return { type: 'error', message: 'Category not found' };
 
   // Read all existing question texts to pass as context
-  const questionItems: Record<string, unknown>[] = [];
-  let lastKey: Record<string, unknown> | undefined;
-
-  do {
-    const result = await ddb.send(new QueryCommand({
-      TableName: QUESTIONS_TABLE,
-      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-      ExpressionAttributeValues: { ':pk': pk, ':prefix': QUESTION_PREFIX },
-      ProjectionExpression: 'questionText, difficulty',
-      ExclusiveStartKey: lastKey,
-    }));
-    if (result.Items) questionItems.push(...(result.Items as Record<string, unknown>[]));
-    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-  } while (lastKey);
+  const questionItems = await paginatedQuery<Record<string, unknown>>(ddb, {
+    TableName: QUESTIONS_TABLE,
+    KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+    ExpressionAttributeValues: { ':pk': pk, ':prefix': QUESTION_PREFIX },
+    ProjectionExpression: 'questionText, difficulty',
+  });
 
   const existingQuestions = questionItems.map(q => ({
     questionText: q.questionText as string,

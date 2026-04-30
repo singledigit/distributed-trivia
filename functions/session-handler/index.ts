@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, QueryCommand as DocQueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import {
   LambdaClient,
   InvokeCommand,
@@ -19,6 +19,7 @@ import {
   publishToChannel,
   timed,
   emitLatency,
+  paginatedQuery,
 } from './shared/index';
 import type {
   AppSyncEventsLambdaEvent,
@@ -363,26 +364,11 @@ async function getSessionMetadata(sessionId: string): Promise<SessionMetadata | 
 }
 
 async function queryAllSessionRecords(sessionId: string): Promise<Record<string, unknown>[]> {
-  const items: Record<string, unknown>[] = [];
-  let lastKey: Record<string, unknown> | undefined;
-
-  do {
-    const result = await ddb.send(
-      new DocQueryCommand({
-        TableName: GAME_TABLE,
-        KeyConditionExpression: 'PK = :pk',
-        ExpressionAttributeValues: { ':pk': sessionPK(sessionId) },
-        ExclusiveStartKey: lastKey,
-      }),
-    );
-
-    if (result.Items) {
-      items.push(...(result.Items as Record<string, unknown>[]));
-    }
-    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-  } while (lastKey);
-
-  return items;
+  return paginatedQuery(ddb, {
+    TableName: GAME_TABLE,
+    KeyConditionExpression: 'PK = :pk',
+    ExpressionAttributeValues: { ':pk': sessionPK(sessionId) },
+  });
 }
 
 interface LeaderboardEntry {
