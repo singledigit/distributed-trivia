@@ -1,510 +1,54 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { subscribe, publish } from '../appsync-events'
-import { signIn, completeNewPassword, isAuthenticated, loadSession } from '../auth'
-import { useCountdown } from '../composables/useCountdown'
+import { onMounted } from 'vue'
+import { isAuthenticated } from '../auth'
+import { useAdminAuth } from '../composables/useAdminAuth'
+import { useAdminSession } from '../composables/useAdminSession'
 import AppHeader from '../components/AppHeader.vue'
-import QRCode from 'qrcode'
 
 // ---------------------------------------------------------------------------
-// Types
+// Composables
 // ---------------------------------------------------------------------------
 
-type GameMode = 'timed' | 'question_count'
-type Phase = 'login' | 'new_password' | 'loading' | 'setup' | 'lobby' | 'playing' | 'finished' | 'cancelled'
+const auth = useAdminAuth()
+const session = useAdminSession()
 
-interface Player {
-  participantId: string
-  displayName: string
-  status: string
-  score: number
-  currentQuestion: number
-  statusDot: string
-}
+// Expose auth state to template
+const { loginUsername, loginPassword, loginError, loggingIn, newPassword, newPasswordConfirm } = auth
 
-interface Category {
-  categoryId: string
-  categoryName: string
-}
+// Expose session state to template
+const {
+  phase, sessionId, qrCodeDataUrl, sessionUrl, players, categories,
+  selectedCategoryId, mode, timeLimitMinutes, questionCount, creating,
+  createError, countdown, canStart, sortedPlayers, playerCount, completedCount,
+  createSession, startGame, cancelGame, newGame, copyUrl,
+} = session
 
-// ---------------------------------------------------------------------------
-// Auth state
-// ---------------------------------------------------------------------------
-
-const loginUsername = ref('')
-const loginPassword = ref('')
-const loginError = ref('')
-const loggingIn = ref(false)
-const newPassword = ref('')
-const newPasswordConfirm = ref('')
-const challengeSession = ref('')
-const adminUsername = ref('')
-
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-
-const phase = ref<Phase>('login')
-const sessionId = ref('')
-const qrCodeDataUrl = ref('')
-const sessionUrl = ref('')
-const players = ref<Player[]>([])
-const categories = ref<Category[]>([])
-const selectedCategoryId = ref('')
-const mode = ref<GameMode>('timed')
-const timeLimitMinutes = ref(3)
-const questionCount = ref(10)
-const creating = ref(false)
-const createError = ref('')
-const startTime = ref('')
-const { seconds: countdown, start: startCountdownTimer, stop: stopCountdown } = useCountdown()
-const unsubscribers: Array<() => void> = []
-const snapshotReceived = ref(false)
-
-const ADMIN_STORAGE_KEY = 'trivia_admin_session'
-
-// ---------------------------------------------------------------------------
-// Admin state persistence (Option B — instant restore on refresh)
-// ---------------------------------------------------------------------------
-
-interface AdminStoredState {
-  sessionId: string
-  phase: Phase
-  players: Player[]
-  sessionUrl: string
-  qrCodeDataUrl: string
-}
-
-function saveAdminState() {
-  if (!sessionId.value) return
-  const state: AdminStoredState = {
-    sessionId: sessionId.value,
-    phase: phase.value,
-    players: players.value,
-    sessionUrl: sessionUrl.value,
-    qrCodeDataUrl: qrCodeDataUrl.value,
-  }
-  sessionStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify(state))
-}
-
-function loadAdminState(): AdminStoredState | null {
-  const raw = sessionStorage.getItem(ADMIN_STORAGE_KEY)
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw) as AdminStoredState
-    return parsed.sessionId ? parsed : null
-  } catch { return null }
-}
-
-// ---------------------------------------------------------------------------
-// Single event handler for /admin/default — handles ALL admin events
-// ---------------------------------------------------------------------------
-
-function handleDefaultChannelEvent(event: unknown) {
-  const data = event as Record<string, unknown>
-
-  switch (data.type) {
-    case 'categories':
-      if (Array.isArray(data.categories)) {
-        categories.value = (data.categories as Array<Record<string, string>>).map((c) => ({
-          categoryId: c.categoryId,
-          categoryName: c.categoryName,
-        })).sort((a, b) => a.categoryName.localeCompare(b.categoryName))
-        if (categories.value.length > 0 && !selectedCategoryId.value) {
-          selectedCategoryId.value = categories.value[0].categoryId
-        }
-      }
-      break
-
-    case 'ack':
-      if (data.sessionId && !sessionId.value) {
-        handleCreateAck(data.sessionId as string)
-      }
-      break
-
-    case 'session_created':
-      break
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Session-specific channel handlers
-// ---------------------------------------------------------------------------
-
-function handleAdminSessionEvent(event: unknown) {
-  const data = event as Record<string, unknown>
-  if (data.type === 'snapshot') restoreFromSnapshot(data)
-  if (data.type === 'session_created') { /* already in lobby */ }
-  if (data.type === 'error' && data.message) {
-    createError.value = data.message as string
-  }
-}
-
-function handleLeaderboardEvent(event: unknown) {
-  const data = event as Record<string, unknown>
-
-  switch (data.type) {
-    case 'snapshot':
-      restoreFromSnapshot(data)
-      break
-    case 'player_list': {
-      const incoming = (data.players as Array<Record<string, unknown>>) ?? []
-      const existingMap = new Map(players.value.map((p) => [p.participantId, p]))
-      players.value = incoming.map((p) => {
-        const existing = existingMap.get(p.participantId as string)
-        return {
-          participantId: p.participantId as string,
-          displayName: p.displayName as string,
-          status: p.status as string,
-          score: existing?.score ?? 0,
-          currentQuestion: existing?.currentQuestion ?? 0,
-          statusDot: existing?.statusDot ?? 'green',
-        }
-      })
-      saveAdminState()
-      break
-    }
-    case 'player_update': {
-      const pid = data.participantId as string
-      const idx = players.value.findIndex((p) => p.participantId === pid)
-      if (idx >= 0) {
-        players.value[idx] = {
-          ...players.value[idx],
-          score: (data.totalScore as number) ?? players.value[idx].score,
-          currentQuestion: (data.currentQuestion as number) ?? players.value[idx].currentQuestion,
-          statusDot: (data.statusDot as string) ?? players.value[idx].statusDot,
-        }
-        saveAdminState()
-      }
-      break
-    }
-    case 'player_completed': {
-      const pid = data.participantId as string
-      const idx = players.value.findIndex((p) => p.participantId === pid)
-      if (idx >= 0) {
-        players.value[idx] = { ...players.value[idx], status: 'completed', statusDot: 'checkmark' }
-        saveAdminState()
-      }
-      break
-    }
-  }
-}
-
-function handleGameEvent(event: unknown) {
-  const data = event as Record<string, unknown>
-  switch (data.type) {
-    case 'game_started':
-      startTime.value = data.startTime as string
-      phase.value = 'playing'
-      startCountdownTimer(startTime.value)
-      saveAdminState()
-      break
-    case 'times_up':
-      stopCountdown()
-      phase.value = 'finished'
-      saveAdminState()
-      break
-    case 'game_cancelled':
-      stopCountdown()
-      phase.value = 'cancelled'
-      saveAdminState()
-      break
-  }
-}
+// Auth phase drives login/new_password views
+const authPhase = auth.authPhase
 
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Auth actions
-// ---------------------------------------------------------------------------
+async function onAuthenticated() {
+  auth.loadUsername()
+  await session.initialize()
+}
 
 async function handleLogin() {
-  loginError.value = ''
-  loggingIn.value = true
-
-  const result = await signIn(loginUsername.value, loginPassword.value)
-
-  if (result.challengeName === 'NEW_PASSWORD_REQUIRED') {
-    challengeSession.value = result.challengeSession!
-    adminUsername.value = loginUsername.value
-    loggingIn.value = false
-    phase.value = 'new_password'
-    return
-  }
-
-  if (result.success) {
-    adminUsername.value = result.session!.username
-    loggingIn.value = false
-    await initializeAdmin()
-    return
-  }
-
-  loginError.value = result.error ?? 'Sign in failed'
-  loggingIn.value = false
+  await auth.handleLogin(onAuthenticated)
 }
 
 async function handleNewPassword() {
-  if (newPassword.value !== newPasswordConfirm.value) {
-    loginError.value = 'Passwords do not match'
-    return
-  }
-  if (newPassword.value.length < 8) {
-    loginError.value = 'Password must be at least 8 characters'
-    return
-  }
-
-  loginError.value = ''
-  loggingIn.value = true
-
-  const result = await completeNewPassword(adminUsername.value, newPassword.value, challengeSession.value)
-
-  if (result.success) {
-    loggingIn.value = false
-    await initializeAdmin()
-    return
-  }
-
-  loginError.value = result.error ?? 'Password change failed'
-  loggingIn.value = false
+  await auth.handleNewPassword(onAuthenticated)
 }
-
-async function initializeAdmin() {
-  phase.value = 'loading'
-  adminUsername.value = loadSession()?.username ?? ''
-
-  // Step 1: Subscribe to /admin/default
-  const unsub = await subscribe('/admin/default', handleDefaultChannelEvent)
-  unsubscribers.push(unsub)
-
-  // Step 1b: Subscribe to /categories/default for category list
-  const catUnsub = await subscribe('/categories/default', handleDefaultChannelEvent)
-  unsubscribers.push(catUnsub)
-
-  // Step 2: Fetch categories
-  await publish('/categories/default', [{ action: 'list' }])
-
-  // Step 3: Check for existing session — restore from cache immediately (Option B)
-  const cached = loadAdminState()
-  if (cached) {
-    // Instant restore from cache — no blank screen
-    sessionId.value = cached.sessionId
-    phase.value = cached.phase
-    players.value = cached.players
-    sessionUrl.value = cached.sessionUrl
-    qrCodeDataUrl.value = cached.qrCodeDataUrl
-
-    // Subscribe to session channels for live updates
-    await subscribeToSessionChannels(cached.sessionId)
-    if (!qrCodeDataUrl.value) await generateQR(cached.sessionId)
-
-    // Option A: request fresh state from server to correct any drift
-    snapshotReceived.value = false
-    try {
-      await publish(`/admin/${cached.sessionId}`, [{ action: 'status' }])
-    } catch { /* status request failed — cached state is still shown */ }
-
-    // Wait briefly for snapshot from onSubscribe handler
-    await new Promise<void>(resolve => {
-      const timeout = setTimeout(() => resolve(), 5000)
-      const check = setInterval(() => {
-        if (snapshotReceived.value) {
-          clearTimeout(timeout)
-          clearInterval(check)
-          resolve()
-        }
-      }, 100)
-    })
-
-    // If snapshot arrived, it already updated the state via restoreFromSnapshot
-    // If not, we're still showing the cached state — good enough
-  } else {
-    // No cached session — check legacy storage key (just sessionId)
-    const legacySessionId = sessionStorage.getItem(ADMIN_STORAGE_KEY)
-    if (legacySessionId && typeof legacySessionId === 'string' && !legacySessionId.startsWith('{')) {
-      sessionId.value = legacySessionId
-      snapshotReceived.value = false
-      await generateQR(legacySessionId)
-      await subscribeToSessionChannels(legacySessionId)
-
-      await new Promise<void>(resolve => {
-        const timeout = setTimeout(() => resolve(), 8000)
-        const check = setInterval(() => {
-          if (snapshotReceived.value) {
-            clearTimeout(timeout)
-            clearInterval(check)
-            resolve()
-          }
-        }, 100)
-      })
-
-      if (!snapshotReceived.value) {
-        clearAdminSession()
-        sessionId.value = ''
-        qrCodeDataUrl.value = ''
-        sessionUrl.value = ''
-        phase.value = 'setup'
-      }
-    } else {
-      phase.value = 'setup'
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Lifecycle
-// ---------------------------------------------------------------------------
 
 onMounted(async () => {
-  // Check if already authenticated
   if (isAuthenticated()) {
-    await initializeAdmin()
+    auth.authPhase.value = 'authenticated'
+    await onAuthenticated()
   }
-  // Otherwise stay on login phase
 })
-
-onUnmounted(() => {
-  for (const unsub of unsubscribers) unsub()
-})
-
-// ---------------------------------------------------------------------------
-// Create session
-// ---------------------------------------------------------------------------
-
-// Track create-to-ready timing
-let createStartTime = 0
-
-async function createSession() {
-  if (!selectedCategoryId.value) {
-    createError.value = 'Please select a category'
-    return
-  }
-  creating.value = true
-  createError.value = ''
-  createStartTime = Date.now()
-
-  try {
-    await publish('/admin/default', [
-      {
-        action: 'create',
-        categoryId: selectedCategoryId.value,
-        mode: mode.value,
-        ...(mode.value === 'timed'
-          ? { timeLimitMinutes: timeLimitMinutes.value }
-          : { questionCount: questionCount.value }),
-      },
-    ])
-  } catch (err: unknown) {
-    createError.value = err instanceof Error ? err.message : 'Failed to create session'
-    creating.value = false
-  }
-}
-
-async function handleCreateAck(newSessionId: string) {
-  if (createStartTime) {
-    const elapsed = Date.now() - createStartTime
-    console.log(`[timing] Create → Ack: ${elapsed}ms`)
-    createStartTime = 0
-  }
-  sessionId.value = newSessionId
-  sessionStorage.setItem(ADMIN_STORAGE_KEY, newSessionId)
-  await generateQR(newSessionId)
-  await subscribeToSessionChannels(newSessionId)
-  creating.value = false
-  phase.value = 'lobby'
-  saveAdminState()
-}
-
-async function subscribeToSessionChannels(sid: string) {
-  const u1 = await subscribe(`/admin/${sid}`, handleAdminSessionEvent)
-  const u2 = await subscribe(`/leaderboard/${sid}`, handleLeaderboardEvent)
-  const u3 = await subscribe(`/game/${sid}`, handleGameEvent)
-  unsubscribers.push(u1, u2, u3)
-}
-
-// ---------------------------------------------------------------------------
-// State restore from snapshot
-// ---------------------------------------------------------------------------
-
-function restoreFromSnapshot(data: Record<string, unknown>) {
-  snapshotReceived.value = true
-  if (data.sessionId) sessionId.value = data.sessionId as string
-
-  if (Array.isArray(data.players)) {
-    players.value = (data.players as Array<Record<string, unknown>>).map((p) => ({
-      participantId: p.participantId as string,
-      displayName: p.displayName as string,
-      status: p.status as string,
-      score: (p.score as number) ?? 0,
-      currentQuestion: (p.currentQuestion as number) ?? 0,
-      statusDot: (p.statusDot as string) ?? 'green',
-    }))
-  }
-
-  switch (data.status as string) {
-    case 'waiting': phase.value = 'lobby'; break
-    case 'in_progress': phase.value = 'playing'; break
-    case 'completed': phase.value = 'finished'; break
-    case 'cancelled': phase.value = 'cancelled'; break
-  }
-
-  saveAdminState()
-}
-
-// ---------------------------------------------------------------------------
-// Game controls
-// ---------------------------------------------------------------------------
-
-async function startGame() {
-  try {
-    await publish(`/admin/${sessionId.value}`, [{ action: 'start' }])
-  } catch (err) {
-    console.error('Failed to start game', err)
-  }
-}
-
-async function cancelGame() {
-  try {
-    await publish(`/admin/${sessionId.value}`, [{ action: 'cancel' }])
-  } catch (err) {
-    console.error('Failed to cancel game', err)
-  }
-}
-
-function newGame() {
-  clearAdminSession()
-  sessionId.value = ''
-  players.value = []
-  qrCodeDataUrl.value = ''
-  sessionUrl.value = ''
-  phase.value = 'setup'
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-async function generateQR(sid: string) {
-  const playUrl = `${window.location.origin}/play/${sid}`
-  sessionUrl.value = playUrl
-  qrCodeDataUrl.value = await QRCode.toDataURL(playUrl, {
-    width: 280, margin: 2, color: { dark: '#f0eef5', light: '#00000000' },
-  })
-}
-
-function clearAdminSession() {
-  sessionStorage.removeItem(ADMIN_STORAGE_KEY)
-}
-
-function copyUrl() {
-  if (sessionUrl.value) navigator.clipboard.writeText(sessionUrl.value).catch(() => {})
-}
-
-const canStart = computed(() => players.value.length >= 1)
-const sortedPlayers = computed(() => [...players.value].sort((a, b) => b.score - a.score))
-const playerCount = computed(() => players.value.length)
-const completedCount = computed(() => players.value.filter((p) => p.status === 'completed').length)
 </script>
 
 <template>
@@ -515,10 +59,10 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
     <div class="bg-orb bg-orb-cyan" />
 
     <div class="admin-inner">
-      <AppHeader active-page="game" :show-nav="phase !== 'login' && phase !== 'new_password'" />
+      <AppHeader active-page="game" :show-nav="authPhase === 'authenticated'" />
 
       <!-- LOGIN -->
-      <div v-if="phase === 'login'" class="phase-login">
+      <div v-if="authPhase === 'login'" class="phase-login">
         <div class="setup-hero">
           <h1 class="setup-title">Host Login</h1>
           <p class="setup-sub">Sign in to create and manage trivia games.</p>
@@ -543,7 +87,7 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
       </div>
 
       <!-- NEW PASSWORD -->
-      <div v-if="phase === 'new_password'" class="phase-login">
+      <div v-if="authPhase === 'new_password'" class="phase-login">
         <div class="setup-hero">
           <h1 class="setup-title">Set New Password</h1>
           <p class="setup-sub">Your temporary password needs to be changed.</p>
