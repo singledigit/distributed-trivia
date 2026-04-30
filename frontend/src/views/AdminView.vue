@@ -64,6 +64,39 @@ const snapshotReceived = ref(false)
 const ADMIN_STORAGE_KEY = 'trivia_admin_session'
 
 // ---------------------------------------------------------------------------
+// Admin state persistence (Option B — instant restore on refresh)
+// ---------------------------------------------------------------------------
+
+interface AdminStoredState {
+  sessionId: string
+  phase: Phase
+  players: Player[]
+  sessionUrl: string
+  qrCodeDataUrl: string
+}
+
+function saveAdminState() {
+  if (!sessionId.value) return
+  const state: AdminStoredState = {
+    sessionId: sessionId.value,
+    phase: phase.value,
+    players: players.value,
+    sessionUrl: sessionUrl.value,
+    qrCodeDataUrl: qrCodeDataUrl.value,
+  }
+  sessionStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify(state))
+}
+
+function loadAdminState(): AdminStoredState | null {
+  const raw = sessionStorage.getItem(ADMIN_STORAGE_KEY)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as AdminStoredState
+    return parsed.sessionId ? parsed : null
+  } catch { return null }
+}
+
+// ---------------------------------------------------------------------------
 // Single event handler for /admin/default — handles ALL admin events
 // ---------------------------------------------------------------------------
 
@@ -128,6 +161,7 @@ function handleLeaderboardEvent(event: unknown) {
           statusDot: existing?.statusDot ?? 'green',
         }
       })
+      saveAdminState()
       break
     }
     case 'player_update': {
@@ -140,6 +174,7 @@ function handleLeaderboardEvent(event: unknown) {
           currentQuestion: (data.currentQuestion as number) ?? players.value[idx].currentQuestion,
           statusDot: (data.statusDot as string) ?? players.value[idx].statusDot,
         }
+        saveAdminState()
       }
       break
     }
@@ -148,6 +183,7 @@ function handleLeaderboardEvent(event: unknown) {
       const idx = players.value.findIndex((p) => p.participantId === pid)
       if (idx >= 0) {
         players.value[idx] = { ...players.value[idx], status: 'completed', statusDot: 'checkmark' }
+        saveAdminState()
       }
       break
     }
@@ -161,14 +197,17 @@ function handleGameEvent(event: unknown) {
       startTime.value = data.startTime as string
       phase.value = 'playing'
       runCountdown()
+      saveAdminState()
       break
     case 'times_up':
       stopCountdown()
       phase.value = 'finished'
+      saveAdminState()
       break
     case 'game_cancelled':
       stopCountdown()
       phase.value = 'cancelled'
+      saveAdminState()
       break
   }
 }
@@ -246,16 +285,29 @@ async function initializeAdmin() {
   // Step 2: Fetch categories
   await publish('/categories/default', [{ action: 'list' }])
 
-  // Step 3: Check for existing session
-  const savedSessionId = sessionStorage.getItem(ADMIN_STORAGE_KEY)
-  if (savedSessionId) {
-    sessionId.value = savedSessionId
-    snapshotReceived.value = false
-    await generateQR(savedSessionId)
-    await subscribeToSessionChannels(savedSessionId)
+  // Step 3: Check for existing session — restore from cache immediately (Option B)
+  const cached = loadAdminState()
+  if (cached) {
+    // Instant restore from cache — no blank screen
+    sessionId.value = cached.sessionId
+    phase.value = cached.phase
+    players.value = cached.players
+    sessionUrl.value = cached.sessionUrl
+    qrCodeDataUrl.value = cached.qrCodeDataUrl
 
+    // Subscribe to session channels for live updates
+    await subscribeToSessionChannels(cached.sessionId)
+    if (!qrCodeDataUrl.value) await generateQR(cached.sessionId)
+
+    // Option A: request fresh state from server to correct any drift
+    snapshotReceived.value = false
+    try {
+      await publish(`/admin/${cached.sessionId}`, [{ action: 'status' }])
+    } catch { /* status request failed — cached state is still shown */ }
+
+    // Wait briefly for snapshot from onSubscribe handler
     await new Promise<void>(resolve => {
-      const timeout = setTimeout(() => resolve(), 3000)
+      const timeout = setTimeout(() => resolve(), 5000)
       const check = setInterval(() => {
         if (snapshotReceived.value) {
           clearTimeout(timeout)
@@ -265,15 +317,38 @@ async function initializeAdmin() {
       }, 100)
     })
 
-    if (!snapshotReceived.value) {
-      clearAdminSession()
-      sessionId.value = ''
-      qrCodeDataUrl.value = ''
-      sessionUrl.value = ''
+    // If snapshot arrived, it already updated the state via restoreFromSnapshot
+    // If not, we're still showing the cached state — good enough
+  } else {
+    // No cached session — check legacy storage key (just sessionId)
+    const legacySessionId = sessionStorage.getItem(ADMIN_STORAGE_KEY)
+    if (legacySessionId && typeof legacySessionId === 'string' && !legacySessionId.startsWith('{')) {
+      sessionId.value = legacySessionId
+      snapshotReceived.value = false
+      await generateQR(legacySessionId)
+      await subscribeToSessionChannels(legacySessionId)
+
+      await new Promise<void>(resolve => {
+        const timeout = setTimeout(() => resolve(), 8000)
+        const check = setInterval(() => {
+          if (snapshotReceived.value) {
+            clearTimeout(timeout)
+            clearInterval(check)
+            resolve()
+          }
+        }, 100)
+      })
+
+      if (!snapshotReceived.value) {
+        clearAdminSession()
+        sessionId.value = ''
+        qrCodeDataUrl.value = ''
+        sessionUrl.value = ''
+        phase.value = 'setup'
+      }
+    } else {
       phase.value = 'setup'
     }
-  } else {
-    phase.value = 'setup'
   }
 }
 
@@ -339,6 +414,7 @@ async function handleCreateAck(newSessionId: string) {
   await subscribeToSessionChannels(newSessionId)
   creating.value = false
   phase.value = 'lobby'
+  saveAdminState()
 }
 
 async function subscribeToSessionChannels(sid: string) {
@@ -373,6 +449,8 @@ function restoreFromSnapshot(data: Record<string, unknown>) {
     case 'completed': phase.value = 'finished'; break
     case 'cancelled': phase.value = 'cancelled'; break
   }
+
+  saveAdminState()
 }
 
 // ---------------------------------------------------------------------------
@@ -610,6 +688,7 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
 
         <div class="lobby-actions">
           <button class="btn btn-gold btn-lg" :disabled="!canStart" @click="startGame">Start Game</button>
+          <a :href="`/leaderboard/${sessionId}`" target="_blank" class="btn btn-ghost">Open Leaderboard ↗</a>
           <button class="btn btn-ghost-danger" @click="cancelGame">Cancel</button>
         </div>
       </div>
@@ -664,6 +743,7 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
         </div>
 
         <div class="center-actions">
+          <a :href="`/leaderboard/${sessionId}`" target="_blank" class="btn btn-ghost">Open Leaderboard ↗</a>
           <button class="btn btn-ghost-danger" @click="cancelGame">End Game</button>
         </div>
       </div>

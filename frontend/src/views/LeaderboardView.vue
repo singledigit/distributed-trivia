@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { subscribe } from '../appsync-events'
+import QRCode from 'qrcode'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,6 +42,8 @@ const showAllPlayers = ref(false)
 const categoryName = ref('')
 const categoryEmoji = ref('')
 const categoryColor = ref('')
+const qrCodeDataUrl = ref('')
+const joinUrl = ref('')
 const gameTimeRemaining = ref<number | null>(null)
 let gameTimerInterval: ReturnType<typeof setInterval> | null = null
 
@@ -249,6 +252,8 @@ function handleGameEvent(event: unknown) {
   const data = event as Record<string, unknown>
   switch (data.type) {
     case 'game_started':
+      if (data.mode) mode.value = data.mode as string
+      if (data.timeLimitMinutes) timeLimitMinutes.value = data.timeLimitMinutes as number
       if (data.startTime) startCountdown(data.startTime as string)
       break
     case 'times_up':
@@ -273,6 +278,13 @@ function handleGameEvent(event: unknown) {
 // ---------------------------------------------------------------------------
 
 onMounted(async () => {
+  // Generate QR code for the join URL
+  const playUrl = `${window.location.origin}/play/${sessionId}`
+  joinUrl.value = playUrl
+  qrCodeDataUrl.value = await QRCode.toDataURL(playUrl, {
+    width: 300, margin: 2, color: { dark: '#f0eef5', light: '#00000000' },
+  })
+
   try {
     const unsubLeaderboard = await subscribe(`/leaderboard/${sessionId}`, handleLeaderboardEvent)
     unsubscribes.push(unsubLeaderboard)
@@ -452,10 +464,27 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Empty state -->
-      <div v-if="totalPlayers === 0" class="empty">
-        <div class="empty-icon">📋</div>
-        <p>Waiting for players to join…</p>
+      <!-- Empty state / Waiting for players with QR code -->
+      <div v-if="totalPlayers === 0 && (gameStatus === 'waiting' || !gameStatus)" class="empty">
+        <div v-if="qrCodeDataUrl" class="qr-section">
+          <h2 class="qr-title">Scan to Join</h2>
+          <div class="qr-frame">
+            <img :src="qrCodeDataUrl" alt="QR code to join game" class="qr-img" />
+          </div>
+          <p class="qr-url">{{ joinUrl }}</p>
+        </div>
+        <p class="empty-sub">Waiting for players to join…</p>
+      </div>
+
+      <!-- QR code shown alongside players in waiting state -->
+      <div v-else-if="gameStatus === 'waiting' && qrCodeDataUrl" class="qr-banner">
+        <div class="qr-banner-frame">
+          <img :src="qrCodeDataUrl" alt="QR code to join game" class="qr-banner-img" />
+        </div>
+        <div class="qr-banner-info">
+          <p class="qr-banner-label">Scan to Join</p>
+          <p class="qr-banner-url">{{ joinUrl }}</p>
+        </div>
       </div>
     </div>
   </div>
@@ -1055,15 +1084,95 @@ onUnmounted(() => {
   text-align: right;
 }
 
-/* ---- Empty ---- */
+/* ---- Empty / QR ---- */
 
 .empty {
   text-align: center;
-  margin-top: 8rem;
+  margin-top: 4rem;
 }
 
-.empty-icon { font-size: 4rem; margin-bottom: 1rem; }
-.empty p { font-size: 1.3rem; color: var(--text-muted); }
+.qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.qr-title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 1.5rem;
+}
+
+.qr-frame {
+  width: 280px;
+  height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 2px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1rem;
+}
+
+.qr-img {
+  width: 260px;
+  height: 260px;
+}
+
+.qr-url {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  word-break: break-all;
+  text-align: center;
+  max-width: 400px;
+}
+
+.empty-sub {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+  margin-top: 1rem;
+}
+
+/* QR banner — shown alongside player list in waiting state */
+.qr-banner {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1.5rem;
+}
+
+.qr-banner-frame {
+  width: 100px;
+  height: 100px;
+  flex-shrink: 0;
+}
+
+.qr-banner-img {
+  width: 100px;
+  height: 100px;
+}
+
+.qr-banner-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.qr-banner-url {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
 
 /* ---- Transitions ---- */
 

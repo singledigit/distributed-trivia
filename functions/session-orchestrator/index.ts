@@ -328,7 +328,7 @@ export const handler = withDurableExecution(
     await context.step('publish-game-start', async () => {
       await publishToChannel({
         channel: `game/${sessionId}`,
-        events: [{ type: 'game_started', sessionId, startTime }],
+        events: [{ type: 'game_started', sessionId, startTime, mode, timeLimitMinutes: timeLimitMinutes ?? 0 }],
       });
     });
 

@@ -498,11 +498,22 @@ onMounted(async () => {
 
     if (stored.phase === 'game_over') {
       phase.value = 'game_over'
+    } else if (stored.phase === 'waiting_done') {
+      phase.value = 'waiting_done'
     } else if (stored.phase === 'join' || stored.phase === 'joining') {
       phase.value = 'join'
       return
+    } else if (stored.phase === 'playing' && stored.currentQuestion) {
+      // Restore to the question — token may still be valid
+      currentQuestion.value = stored.currentQuestion
+      phase.value = 'playing'
+    } else if (stored.phase === 'feedback' && stored.currentQuestion) {
+      // Was submitting an answer — show the question, let them re-submit if token is still valid
+      currentQuestion.value = stored.currentQuestion
+      phase.value = 'playing'
     } else {
-      phase.value = stored.phase === 'playing' || stored.phase === 'feedback' || stored.phase === 'reconnecting' ? 'reconnecting' : stored.phase
+      // lobby, countdown, timeout, reconnecting — restore as-is
+      phase.value = stored.phase
       if (stored.currentQuestion) currentQuestion.value = stored.currentQuestion
     }
     await subscribeToChannels()
