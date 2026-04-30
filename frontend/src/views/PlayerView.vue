@@ -90,6 +90,9 @@ const waitingEndCallbackToken = ref('')
 // Subscriptions
 const unsubscribers: (() => void)[] = []
 
+// Timing
+let joinStartTime = 0
+
 // ---------------------------------------------------------------------------
 // Session storage
 // ---------------------------------------------------------------------------
@@ -172,6 +175,10 @@ function handlePlayerEvent(event: unknown) {
 
   switch (type) {
     case 'join_ack':
+      if (joinStartTime) {
+        console.log(`[timing] Join → Ack: ${Date.now() - joinStartTime}ms`)
+        joinStartTime = 0
+      }
       questionCount.value = data.questionCount as number
       categoryName.value = (data.categoryName as string) ?? ''
       categoryEmoji.value = (data.categoryEmoji as string) ?? ''
@@ -268,6 +275,7 @@ async function handleJoin() {
   if (!validateName()) return
   phase.value = 'joining'
   nameError.value = ''
+  joinStartTime = Date.now()
 
   const myName = displayName.value.trim()
   let joined = false

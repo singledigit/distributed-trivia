@@ -290,29 +290,31 @@ export const handler = withDurableExecution(
 
     context.logger.info('POD started', { sessionId, participantId, displayName });
 
-    // Step 1: Read question package
-    const questions: Question[] = await context.step('read-package', async () => {
-      const result = await ddb.send(new GetCommand({
-        TableName: TABLE,
-        Key: { PK: pk, SK: PACKAGE_SK },
-      }));
-      if (!result.Item) throw new Error(`PACKAGE not found for session ${sessionId}`);
-      return result.Item.questions as Question[];
-    });
+    // Step 1: Read question package + session metadata in parallel (single step, one checkpoint)
+    const { questions, categoryMeta } = await context.step('read-session-data', async () => {
+      const [packageResult, metaResult] = await Promise.all([
+        ddb.send(new GetCommand({
+          TableName: TABLE,
+          Key: { PK: pk, SK: PACKAGE_SK },
+        })),
+        ddb.send(new GetCommand({
+          TableName: TABLE,
+          Key: { PK: pk, SK: METADATA_SK },
+          ProjectionExpression: 'categoryName, categoryEmoji, categoryColor, #m',
+          ExpressionAttributeNames: { '#m': 'mode' },
+        })),
+      ]);
 
-    // Step 1b: Read session metadata for category name and emoji
-    const categoryMeta = await context.step('read-category-meta', async () => {
-      const result = await ddb.send(new GetCommand({
-        TableName: TABLE,
-        Key: { PK: pk, SK: METADATA_SK },
-        ProjectionExpression: 'categoryName, categoryEmoji, categoryColor, #m',
-        ExpressionAttributeNames: { '#m': 'mode' },
-      }));
+      if (!packageResult.Item) throw new Error(`PACKAGE not found for session ${sessionId}`);
+
       return {
-        categoryName: (result.Item?.categoryName as string) ?? '',
-        categoryEmoji: (result.Item?.categoryEmoji as string) ?? '',
-        categoryColor: (result.Item?.categoryColor as string) ?? '',
-        mode: (result.Item?.mode as string) ?? '',
+        questions: packageResult.Item.questions as Question[],
+        categoryMeta: {
+          categoryName: (metaResult.Item?.categoryName as string) ?? '',
+          categoryEmoji: (metaResult.Item?.categoryEmoji as string) ?? '',
+          categoryColor: (metaResult.Item?.categoryColor as string) ?? '',
+          mode: (metaResult.Item?.mode as string) ?? '',
+        },
       };
     });
 

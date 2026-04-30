@@ -298,6 +298,9 @@ onUnmounted(() => {
 // Create session
 // ---------------------------------------------------------------------------
 
+// Track create-to-ready timing
+let createStartTime = 0
+
 async function createSession() {
   if (!selectedCategoryId.value) {
     createError.value = 'Please select a category'
@@ -305,6 +308,7 @@ async function createSession() {
   }
   creating.value = true
   createError.value = ''
+  createStartTime = Date.now()
 
   try {
     await publish('/admin/default', [
@@ -324,6 +328,11 @@ async function createSession() {
 }
 
 async function handleCreateAck(newSessionId: string) {
+  if (createStartTime) {
+    const elapsed = Date.now() - createStartTime
+    console.log(`[timing] Create → Ack: ${elapsed}ms`)
+    createStartTime = 0
+  }
   sessionId.value = newSessionId
   sessionStorage.setItem(ADMIN_STORAGE_KEY, newSessionId)
   await generateQR(newSessionId)
