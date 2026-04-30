@@ -525,7 +525,9 @@ Resources:
             - Effect: Allow
               Action:
                 - bedrock:InvokeModel
-              Resource: '*'
+              Resource:
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/*'
+                - !Sub 'arn:aws:bedrock:${AWS::Region}:*:inference-profile/us.anthropic.*'
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -550,7 +552,7 @@ Resources:
           Type: DynamoDB
           Properties:
             Stream: !GetAtt GameTable.StreamArn
-            StartingPosition: TRIM_HORIZON
+            StartingPosition: LATEST
             BatchSize: 10
             MaximumRetryAttempts: 3
             BisectBatchOnFunctionError: true

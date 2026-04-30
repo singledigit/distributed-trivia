@@ -38,6 +38,16 @@ const QUESTIONS_TABLE = process.env.QUESTIONS_TABLE_NAME!;
 
 // --- Question selection helpers ---
 
+/** Fisher-Yates shuffle — unbiased O(n) */
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 /**
  * Select questions with a balanced 1:1:1 difficulty ratio, randomized.
  * If not enough questions of a difficulty, fill from others.
@@ -45,18 +55,15 @@ const QUESTIONS_TABLE = process.env.QUESTIONS_TABLE_NAME!;
 function selectBalancedQuestions(allQuestions: Question[], count: number): Question[] {
   const byDifficulty: Record<Difficulty, Question[]> = { easy: [], medium: [], hard: [] };
 
-  // Shuffle all questions first
-  const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
+  const shuffled = shuffle(allQuestions);
   for (const q of shuffled) {
     byDifficulty[q.difficulty].push(q);
   }
 
   const perDifficulty = Math.floor(count / 3);
-  const remainder = count % 3;
 
   const selected: Question[] = [];
 
-  // Take equal amounts from each difficulty
   const difficulties: Difficulty[] = ['easy', 'medium', 'hard'];
   const remaining: Question[] = [];
 
@@ -67,12 +74,11 @@ function selectBalancedQuestions(allQuestions: Question[], count: number): Quest
   }
 
   // Fill remainder from whatever is left
-  const shuffledRemaining = remaining.sort(() => Math.random() - 0.5);
   const needed = count - selected.length;
-  selected.push(...shuffledRemaining.slice(0, needed));
+  selected.push(...shuffle(remaining).slice(0, needed));
 
   // Final shuffle so difficulties are mixed
-  return selected.sort(() => Math.random() - 0.5);
+  return shuffle(selected);
 }
 
 // --- Handler ---
@@ -123,6 +129,7 @@ export const handler = withDurableExecution(
       ? questionCount!
       : Math.min(timeLimitMinutes! * 10, 50); // 10 per minute, max 50
 
+    // Step required: selectBalancedQuestions uses Math.random() — must be deterministic across replays
     const selectedQuestions = await context.step('select-questions', async () => {
       return selectBalancedQuestions(questions, Math.min(targetCount, questions.length));
     });

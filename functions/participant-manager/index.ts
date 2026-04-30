@@ -13,7 +13,6 @@ import {
   validateDisplayName,
   ttl24h,
   timed,
-  emitLatency,
 } from './shared/index';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -190,8 +189,6 @@ async function handleJoin(
       }),
     ),
   );
-
-  emitLatency('JoinPlayer', 0, 'participant-manager');
 
   return {
     type: 'joined',

@@ -88,10 +88,9 @@ export interface CategoryMetadata {
   PK: string;
   SK: 'METADATA';
   categoryId: string;
-  categoryName?: string;
+  categoryName: string;
   categoryEmoji?: string;
   categoryColor?: string;
-  categoryName: string;
 }
 
 // --- AppSync Events ---

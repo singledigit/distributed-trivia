@@ -1,10 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from './views/HomeView.vue'
-import AdminView from './views/AdminView.vue'
-import CategoriesView from './views/CategoriesView.vue'
-import PlayerView from './views/PlayerView.vue'
-import LeaderboardView from './views/LeaderboardView.vue'
-import NotFoundView from './views/NotFoundView.vue'
+
+const AdminView = () => import('./views/AdminView.vue')
+const CategoriesView = () => import('./views/CategoriesView.vue')
+const PlayerView = () => import('./views/PlayerView.vue')
+const LeaderboardView = () => import('./views/LeaderboardView.vue')
+const NotFoundView = () => import('./views/NotFoundView.vue')
 
 const router = createRouter({
   history: createWebHistory(),

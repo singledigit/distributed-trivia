@@ -171,8 +171,6 @@ async function handleCreate(payload: CreatePayload) {
     })),
   );
 
-  emitLatency('CreateSession', 0, 'session-handler');
-
   return { type: 'ack', sessionId };
 }
 
