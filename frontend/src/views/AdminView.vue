@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { subscribe, publish } from '../appsync-events'
 import { signIn, completeNewPassword, isAuthenticated, loadSession } from '../auth'
+import { useCountdown } from '../composables/useCountdown'
 import AppHeader from '../components/AppHeader.vue'
 import QRCode from 'qrcode'
 
@@ -56,8 +57,7 @@ const questionCount = ref(10)
 const creating = ref(false)
 const createError = ref('')
 const startTime = ref('')
-const countdown = ref(0)
-let countdownInterval: ReturnType<typeof setInterval> | null = null
+const { seconds: countdown, start: startCountdownTimer, stop: stopCountdown } = useCountdown()
 const unsubscribers: Array<() => void> = []
 const snapshotReceived = ref(false)
 
@@ -196,7 +196,7 @@ function handleGameEvent(event: unknown) {
     case 'game_started':
       startTime.value = data.startTime as string
       phase.value = 'playing'
-      runCountdown()
+      startCountdownTimer(startTime.value)
       saveAdminState()
       break
     case 'times_up':
@@ -366,7 +366,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   for (const unsub of unsubscribers) unsub()
-  stopCountdown()
 })
 
 // ---------------------------------------------------------------------------
@@ -496,22 +495,6 @@ async function generateQR(sid: string) {
 
 function clearAdminSession() {
   sessionStorage.removeItem(ADMIN_STORAGE_KEY)
-}
-
-function runCountdown() {
-  if (!startTime.value) return
-  const tick = () => {
-    const diff = Math.max(0, Math.ceil((new Date(startTime.value).getTime() - Date.now()) / 1000))
-    countdown.value = diff
-    if (diff <= 0 && countdownInterval) { clearInterval(countdownInterval); countdownInterval = null }
-  }
-  tick()
-  countdownInterval = setInterval(tick, 250)
-}
-
-function stopCountdown() {
-  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null }
-  countdown.value = 0
 }
 
 function copyUrl() {
@@ -907,22 +890,7 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
 
 /* ---- Card ---- */
 
-.card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  box-shadow: var(--shadow-card);
-}
-
-.card-label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  color: var(--text-muted);
-  margin-bottom: 16px;
-}
+/* Card base → style.css */
 
 .card-header {
   display: flex;
@@ -1063,82 +1031,7 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
   padding: 0 8px;
 }
 
-/* ---- Buttons ---- */
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: none;
-  border-radius: var(--radius-md);
-  font-family: var(--font-display);
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  padding: 12px 28px;
-}
-
-.btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.btn-gold {
-  background: linear-gradient(135deg, var(--gold), #d97706);
-  color: #0c0a1a;
-  box-shadow: 0 2px 12px var(--gold-glow);
-}
-
-.btn-gold:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-gold);
-  transform: translateY(-1px);
-}
-
-.btn-ghost {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-medium);
-  color: var(--text-secondary);
-}
-
-.btn-ghost:hover {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
-
-.btn-ghost-danger {
-  background: transparent;
-  border: 1px solid rgba(244, 63, 94, 0.3);
-  color: var(--rose);
-  padding: 10px 24px;
-  font-size: 14px;
-}
-
-.btn-ghost-danger:hover {
-  background: rgba(244, 63, 94, 0.08);
-  border-color: var(--rose);
-}
-
-.btn-full { width: 100%; }
-.btn-lg { padding: 16px 36px; font-size: 16px; border-radius: var(--radius-md); }
-.btn-sm { padding: 8px 16px; font-size: 13px; }
-
-.spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(12, 10, 26, 0.3);
-  border-top-color: #0c0a1a;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-.error-msg {
-  color: var(--rose);
-  font-size: 14px;
-  margin-top: 12px;
-  text-align: center;
-}
+/* Buttons, spinner, error-msg, card, card-label, card-hint → style.css */
 
 /* ---- Lobby ---- */
 
@@ -1528,11 +1421,7 @@ const completedCount = computed(() => players.value.filter((p) => p.status === '
 
 /* ---- Create Category ---- */
 
-.card-hint {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-bottom: 14px;
-}
+/* card-hint → style.css */
 
 .create-cat-row {
   display: flex;

@@ -2,6 +2,8 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { subscribe, publish } from '../appsync-events'
+import { useCountdown } from '../composables/useCountdown'
+import QuestionReport from '../components/QuestionReport.vue'
 
 // ---------------------------------------------------------------------------
 // Route params
@@ -37,8 +39,7 @@ const categoryColor = ref('')
 const gameMode = ref('')
 
 // Countdown
-const countdownSeconds = ref(0)
-let countdownInterval: ReturnType<typeof setInterval> | null = null
+const { seconds: countdownSeconds, start: startCountdownTimer, stop: stopCountdown } = useCountdown()
 
 // Current question
 const currentQuestion = ref<{
@@ -79,7 +80,6 @@ interface QuestionResult {
   wasSkipped: boolean
 }
 const questionResults = ref<QuestionResult[]>([])
-const showReport = ref(false)
 
 // Ready callback token
 const readyCallbackToken = ref('')
@@ -346,20 +346,8 @@ async function subscribeToChannels() {
 
 function startCountdown(startTimeStr: string) {
   phase.value = 'countdown'
-  stopCountdown()
-  const startTime = new Date(startTimeStr).getTime()
-  function tick() {
-    const remaining = Math.max(0, Math.ceil((startTime - Date.now()) / 1000))
-    countdownSeconds.value = remaining
-    if (remaining <= 0) { stopCountdown(); sendReady() }
-  }
-  tick()
-  countdownInterval = setInterval(tick, 200)
+  startCountdownTimer(startTimeStr, () => sendReady())
   saveState()
-}
-
-function stopCountdown() {
-  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null }
 }
 
 async function sendReady() {
@@ -441,40 +429,8 @@ const progressPercent = computed(() => {
   return Math.round(((currentQuestion.value.questionNum - 1) / currentQuestion.value.totalQuestions) * 100)
 })
 
-// Report computed
-const correctCount = computed(() => questionResults.value.filter(r => r.isCorrect).length)
-const incorrectCount = computed(() => questionResults.value.filter(r => !r.isCorrect && !r.wasSkipped).length)
-const skippedCount = computed(() => questionResults.value.filter(r => r.wasSkipped).length)
-
-// Category theme — use backend emoji if available, fall back to keyword matching
 const categoryTheme = computed(() => {
-  // Prefer emoji from backend (set by Category Creator ODF)
-  if (categoryEmoji.value) {
-    return { emoji: categoryEmoji.value, label: categoryName.value || 'Trivia' }
-  }
-
-  // Fallback: keyword matching for legacy categories without stored emoji
-  const name = categoryName.value.toLowerCase()
-  if (name.includes('star wars')) return { emoji: '⚔️', label: 'Star Wars' }
-  if (name.includes('harry potter') || name.includes('hogwarts')) return { emoji: '⚡', label: 'Harry Potter' }
-  if (name.includes('disney')) return { emoji: '🏰', label: 'Disney' }
-  if (name.includes('marvel') || name.includes('avenger')) return { emoji: '🦸', label: 'Marvel' }
-  if (name.includes('music') || name.includes('80s') || name.includes('90s') || name.includes('hip hop')) return { emoji: '🎵', label: categoryName.value }
-  if (name.includes('science') || name.includes('nature')) return { emoji: '🔬', label: 'Science' }
-  if (name.includes('space') || name.includes('astro')) return { emoji: '🚀', label: 'Space' }
-  if (name.includes('history') || name.includes('war')) return { emoji: '📜', label: 'History' }
-  if (name.includes('sport')) return { emoji: '⚽', label: 'Sports' }
-  if (name.includes('food') || name.includes('cook') || name.includes('cuisine')) return { emoji: '🍳', label: 'Food' }
-  if (name.includes('geo') || name.includes('countr') || name.includes('capital')) return { emoji: '🌍', label: 'Geography' }
-  if (name.includes('bible') || name.includes('religio')) return { emoji: '📖', label: 'Bible' }
-  if (name.includes('movie') || name.includes('film') || name.includes('cinema')) return { emoji: '🎬', label: 'Movies' }
-  if (name.includes('tv') || name.includes('television') || name.includes('series')) return { emoji: '📺', label: 'TV' }
-  if (name.includes('game') || name.includes('video game') || name.includes('gaming')) return { emoji: '🎮', label: 'Gaming' }
-  if (name.includes('aws') || name.includes('cloud') || name.includes('architect')) return { emoji: '☁️', label: 'AWS' }
-  if (name.includes('animal') || name.includes('wildlife')) return { emoji: '🐾', label: 'Animals' }
-  if (name.includes('art') || name.includes('paint')) return { emoji: '🎨', label: 'Art' }
-  if (name.includes('book') || name.includes('literature')) return { emoji: '📚', label: 'Literature' }
-  return { emoji: '🧠', label: categoryName.value || 'Trivia' }
+  return { emoji: categoryEmoji.value || '🧠', label: categoryName.value || 'Trivia' }
 })
 
 // ---------------------------------------------------------------------------
@@ -521,7 +477,6 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  stopCountdown()
   clearFeedbackTimeout()
   for (const unsub of unsubscribers) unsub()
 })
@@ -662,42 +617,7 @@ watch(phase, () => { if (participantId.value) saveState() })
         </div>
 
         <!-- Preview report while waiting -->
-        <div v-if="questionResults.length > 0" class="report-summary" style="margin-top: 32px;">
-          <div class="report-pills">
-            <span class="rpill rpill-correct">{{ correctCount }} correct</span>
-            <span class="rpill rpill-wrong">{{ incorrectCount }} wrong</span>
-            <span v-if="skippedCount > 0" class="rpill rpill-skip">{{ skippedCount }} skipped</span>
-          </div>
-          <button class="btn-report" @click="showReport = !showReport">
-            {{ showReport ? 'Hide' : 'Review' }} Answers
-            <span :class="['report-arrow', { open: showReport }]">▾</span>
-          </button>
-        </div>
-
-        <div v-if="showReport && questionResults.length > 0" class="report">
-          <div
-            v-for="r in questionResults"
-            :key="r.questionNum"
-            :class="['report-item', { 'ri-correct': r.isCorrect, 'ri-wrong': !r.isCorrect && !r.wasSkipped, 'ri-skip': r.wasSkipped }]"
-          >
-            <div class="ri-header">
-              <span class="ri-num">Q{{ r.questionNum }}</span>
-              <span :class="['ri-badge', `ri-badge-${r.difficulty}`]">{{ r.difficulty }}</span>
-              <span class="ri-pts">{{ r.points }} pts</span>
-              <span class="ri-result">
-                <span v-if="r.isCorrect">✓</span>
-                <span v-else-if="r.wasSkipped">—</span>
-                <span v-else>✗</span>
-              </span>
-            </div>
-            <div class="ri-question">{{ r.questionText }}</div>
-            <div v-if="!r.isCorrect" class="ri-answer">
-              <span v-if="r.selectedOption" class="ri-yours">Your answer: {{ r.selectedOption }}</span>
-              <span v-else class="ri-yours">Skipped</span>
-              <span class="ri-correct-answer">Correct: {{ r.correctAnswer }}</span>
-            </div>
-          </div>
-        </div>
+        <QuestionReport :results="questionResults" style="margin-top: 32px;" />
       </div>
 
       <!-- GAME OVER -->
@@ -720,44 +640,8 @@ watch(phase, () => { if (participantId.value) saveState() })
           </div>
         </div>
 
-        <!-- Report summary -->
-        <div v-if="questionResults.length > 0" class="report-summary">
-          <div class="report-pills">
-            <span class="rpill rpill-correct">{{ correctCount }} correct</span>
-            <span class="rpill rpill-wrong">{{ incorrectCount }} wrong</span>
-            <span v-if="skippedCount > 0" class="rpill rpill-skip">{{ skippedCount }} skipped</span>
-          </div>
-          <button class="btn-report" @click="showReport = !showReport">
-            {{ showReport ? 'Hide' : 'Review' }} Answers
-            <span :class="['report-arrow', { open: showReport }]">▾</span>
-          </button>
-        </div>
-
-        <!-- Detailed report -->
-        <div v-if="showReport && questionResults.length > 0" class="report">
-          <div
-            v-for="r in questionResults"
-            :key="r.questionNum"
-            :class="['report-item', { 'ri-correct': r.isCorrect, 'ri-wrong': !r.isCorrect && !r.wasSkipped, 'ri-skip': r.wasSkipped }]"
-          >
-            <div class="ri-header">
-              <span class="ri-num">Q{{ r.questionNum }}</span>
-              <span :class="['ri-badge', `ri-badge-${r.difficulty}`]">{{ r.difficulty }}</span>
-              <span class="ri-pts">{{ r.points }} pts</span>
-              <span class="ri-result">
-                <span v-if="r.isCorrect">✓</span>
-                <span v-else-if="r.wasSkipped">—</span>
-                <span v-else>✗</span>
-              </span>
-            </div>
-            <div class="ri-question">{{ r.questionText }}</div>
-            <div v-if="!r.isCorrect" class="ri-answer">
-              <span v-if="r.selectedOption" class="ri-yours">Your answer: {{ r.selectedOption }}</span>
-              <span v-else class="ri-yours">Skipped</span>
-              <span class="ri-correct-answer">Correct: {{ r.correctAnswer }}</span>
-            </div>
-          </div>
-        </div>
+        <!-- Report -->
+        <QuestionReport :results="questionResults" />
       </div>
     </div>
   </div>
@@ -820,24 +704,9 @@ watch(phase, () => { if (participantId.value) saveState() })
   pointer-events: none;
 }
 
-/* ---- Buttons ---- */
+/* ---- Button overrides (base .btn in style.css) ---- */
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: none;
-  border-radius: var(--radius-md);
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  padding: 14px 32px;
-}
-
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn { padding: 14px 32px; font-size: 16px; }
 
 .btn-gold {
   background: var(--cat-color, linear-gradient(135deg, var(--gold), #d97706));
@@ -848,37 +717,16 @@ watch(phase, () => { if (participantId.value) saveState() })
 
 .btn-gold:hover:not(:disabled) {
   box-shadow: 0 0 30px var(--cat-glow, var(--gold-glow)), 0 0 60px color-mix(in srgb, var(--cat-color, var(--gold)) 15%, transparent);
-  transform: translateY(-1px);
 }
 
-.btn-gold:active:not(:disabled) { transform: scale(0.97); }
-
-.btn-ghost {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-medium);
-  color: var(--text-secondary);
-}
-
-.btn-ghost:hover { border-color: var(--border-strong); color: var(--text-primary); }
-
-.btn-full { width: 100%; }
 .btn-lg { padding: 16px; font-size: 17px; border-radius: var(--radius-lg); }
 
 .spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(12, 10, 26, 0.3);
-  border-top-color: #0c0a1a;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
 }
 
-.error-msg {
-  color: var(--rose);
-  font-size: 14px;
-  margin-top: 4px;
-  text-align: center;
-}
+.error-msg { margin-top: 4px; }
 
 /* ---- JOIN ---- */
 

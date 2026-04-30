@@ -229,29 +229,9 @@ import { RouterLink } from 'vue-router'
   animation: slide-up 0.5s ease-out 0.2s both;
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: none;
-  border-radius: var(--radius-md);
-  font-family: var(--font-display);
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-decoration: none;
-}
-
-.btn-gold {
-  background: linear-gradient(135deg, var(--gold), #d97706);
-  color: #0c0a1a;
-  box-shadow: 0 2px 12px var(--gold-glow);
-}
+/* btn base → style.css */
 
 .btn-gold:hover {
-  box-shadow: var(--shadow-glow-gold);
-  transform: translateY(-1px);
   color: #0c0a1a;
 }
 

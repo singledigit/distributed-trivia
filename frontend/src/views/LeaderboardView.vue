@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { subscribe } from '../appsync-events'
+import { useCountdown } from '../composables/useCountdown'
 import QRCode from 'qrcode'
 
 // ---------------------------------------------------------------------------
@@ -37,7 +38,6 @@ const questionCount = ref(0)
 const mode = ref('')
 const timeLimitMinutes = ref(0)
 const startTime = ref<string | null>(null)
-const countdown = ref<number | null>(null)
 const showAllPlayers = ref(false)
 const categoryName = ref('')
 const categoryEmoji = ref('')
@@ -48,7 +48,7 @@ const gameTimeRemaining = ref<number | null>(null)
 let gameTimerInterval: ReturnType<typeof setInterval> | null = null
 
 const unsubscribes: (() => void)[] = []
-let countdownInterval: ReturnType<typeof setInterval> | null = null
+const { seconds: countdownValue, start: startCountdownTimer, stop: stopCountdown } = useCountdown()
 
 // ---------------------------------------------------------------------------
 // Computed — split into leader, top 10, and rest
@@ -95,7 +95,7 @@ const isTimedMode = computed(() => mode.value === 'timed')
 const statusLabel = computed(() => {
   switch (gameStatus.value) {
     case 'waiting': return 'Waiting for Players'
-    case 'starting': return countdown.value !== null ? `Starting in ${countdown.value}s` : 'Starting…'
+    case 'starting': return countdownValue.value > 0 ? `Starting in ${countdownValue.value}s` : 'Starting…'
     case 'in_progress': return 'Game In Progress'
     case 'completed': return 'Game Over!'
     case 'cancelled': return 'Game Cancelled'
@@ -127,23 +127,12 @@ function startCountdown(targetTime: string) {
   gameStatus.value = 'starting'
   startTime.value = targetTime
 
-  const tick = () => {
-    const diff = Math.max(0, Math.ceil((new Date(targetTime).getTime() - Date.now()) / 1000))
-    countdown.value = diff
-    if (diff <= 0) {
-      if (countdownInterval) clearInterval(countdownInterval)
-      countdownInterval = null
-      gameStatus.value = 'in_progress'
-      countdown.value = null
-      // Start the game timer for timed mode
-      if (mode.value === 'timed' && timeLimitMinutes.value > 0) {
-        startGameTimer(new Date(targetTime).getTime(), timeLimitMinutes.value)
-      }
+  startCountdownTimer(targetTime, () => {
+    gameStatus.value = 'in_progress'
+    if (mode.value === 'timed' && timeLimitMinutes.value > 0) {
+      startGameTimer(new Date(targetTime).getTime(), timeLimitMinutes.value)
     }
-  }
-
-  tick()
-  countdownInterval = setInterval(tick, 250)
+  })
 }
 
 function startGameTimer(gameStartMs: number, limitMinutes: number) {
@@ -258,16 +247,14 @@ function handleGameEvent(event: unknown) {
       break
     case 'times_up':
       gameStatus.value = 'completed'
-      if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null }
+      stopCountdown()
       if (gameTimerInterval) { clearInterval(gameTimerInterval); gameTimerInterval = null }
-      countdown.value = null
       gameTimeRemaining.value = 0
       break
     case 'game_cancelled':
       gameStatus.value = 'cancelled'
-      if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null }
+      stopCountdown()
       if (gameTimerInterval) { clearInterval(gameTimerInterval); gameTimerInterval = null }
-      countdown.value = null
       gameTimeRemaining.value = null
       break
   }
@@ -297,7 +284,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   for (const unsub of unsubscribes) unsub()
-  if (countdownInterval) clearInterval(countdownInterval)
   if (gameTimerInterval) clearInterval(gameTimerInterval)
 })
 </script>
@@ -328,8 +314,8 @@ onUnmounted(() => {
       </header>
 
       <!-- Countdown overlay -->
-      <div v-if="gameStatus === 'starting' && countdown !== null" class="countdown-overlay">
-        <div class="countdown-num">{{ countdown }}</div>
+      <div v-if="gameStatus === 'starting' && countdownValue > 0" class="countdown-overlay">
+        <div class="countdown-num">{{ countdownValue }}</div>
       </div>
 
       <!-- Game over banner -->

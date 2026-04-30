@@ -313,19 +313,9 @@ onUnmounted(() => {
   font-size: 28px; font-weight: 800; margin-bottom: 24px;
 }
 
-/* Cards */
-.card {
-  background: var(--bg-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); padding: 24px;
-  box-shadow: var(--shadow-card); margin-bottom: 16px;
-}
-
-.card-label {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 1.5px; color: var(--text-muted); margin-bottom: 8px;
-}
-
-.card-hint { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
+/* card base → style.css */
+.card { margin-bottom: 16px; }
+.card-label { margin-bottom: 8px; }
 
 /* Create */
 .create-row { display: flex; gap: 8px; }
@@ -340,10 +330,7 @@ onUnmounted(() => {
 .cat-input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-glow); }
 .cat-input::placeholder { color: var(--text-muted); }
 
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: var(--radius-md); font-family: var(--font-display); font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-gold { background: linear-gradient(135deg, var(--gold), #d97706); color: #0c0a1a; box-shadow: 0 2px 12px var(--gold-glow); }
-.btn-gold:hover:not(:disabled) { box-shadow: var(--shadow-glow-gold); transform: translateY(-1px); }
+/* btn base → style.css */
 .btn-create { padding: 10px 20px; white-space: nowrap; }
 
 .status-bar {
