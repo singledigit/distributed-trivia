@@ -14,7 +14,7 @@ export {
   ttl24h,
 } from './keys';
 
-export { calculateScore, pointsForDifficulty } from './scoring';
+export { calculateScore, pointsForDifficulty, statusDotColor } from './scoring';
 
 export {
   validateDisplayName,

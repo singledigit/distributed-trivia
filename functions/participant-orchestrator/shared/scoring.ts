@@ -34,3 +34,17 @@ export function calculateScore(difficulty: Difficulty, isCorrect: boolean): numb
 export function pointsForDifficulty(difficulty: Difficulty): number {
   return POINTS_BY_DIFFICULTY[difficulty];
 }
+
+/**
+ * Determine status dot color based on activity status.
+ * green = correct, amber = skipped/extended, red = incorrect
+ */
+export function statusDotColor(status: string): string {
+  switch (status) {
+    case 'correct': return 'green';
+    case 'skipped':
+    case 'extended': return 'amber';
+    case 'incorrect': return 'red';
+    default: return 'green';
+  }
+}

@@ -20,6 +20,7 @@ import {
   timed,
   emitLatency,
   paginatedQuery,
+  statusDotColor,
 } from './shared/index';
 import type {
   AppSyncEventsLambdaEvent,
@@ -415,23 +416,10 @@ function computeLeaderboard(
     if (player.status === 'completed') {
       statusDot = 'checkmark';
     } else if (playerActivities.length > 0) {
-      // Sort by timestamp descending to get latest
       const sorted = [...playerActivities].sort(
         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
       );
-      const latest = sorted[0];
-      switch (latest.status) {
-        case 'correct':
-          statusDot = 'green';
-          break;
-        case 'extended':
-        case 'skipped':
-          statusDot = 'amber';
-          break;
-        case 'incorrect':
-          statusDot = 'red';
-          break;
-      }
+      statusDot = statusDotColor(sorted[0].status) as LeaderboardEntry['statusDot'];
     }
 
     return {

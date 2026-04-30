@@ -2,8 +2,8 @@ import type { DynamoDBStreamEvent, DynamoDBBatchResponse, DynamoDBRecord } from 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
-import { publishToChannel, sessionPK, PLAYER_PREFIX, ACTIVITY_PREFIX, paginatedQuery } from './shared/index';
-import type { PlayerRecord, ActivityRecord, ActivityStatus } from './shared/index';
+import { publishToChannel, sessionPK, PLAYER_PREFIX, ACTIVITY_PREFIX, paginatedQuery, statusDotColor } from './shared/index';
+import type { PlayerRecord, ActivityRecord } from './shared/index';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const TABLE_NAME = process.env.GAME_TABLE_NAME!;
@@ -22,24 +22,6 @@ function extractSessionId(pk: string): string {
 function extractParticipantIdFromActivitySK(sk: string): string {
   const parts = sk.split('#');
   return parts[1];
-}
-
-/**
- * Determine status dot color based on the latest activity status.
- * green = correct, amber = skipped/extended, red = incorrect
- */
-function statusDotColor(status: ActivityStatus): string {
-  switch (status) {
-    case 'correct':
-      return 'green';
-    case 'skipped':
-    case 'extended':
-      return 'amber';
-    case 'incorrect':
-      return 'red';
-    default:
-      return 'green';
-  }
 }
 
 /**
