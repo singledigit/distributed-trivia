@@ -181,7 +181,17 @@ export const handler = withDurableExecution(
         createdAt: now,
         ttl,
       };
-      await ddb.send(new PutCommand({ TableName: GAME_TABLE, Item: metadata }));
+      await ddb.send(new PutCommand({
+        TableName: GAME_TABLE,
+        Item: metadata,
+        ConditionExpression: 'attribute_not_exists(PK)',
+      })).catch((err: unknown) => {
+        if ((err as { name?: string })?.name === 'ConditionalCheckFailedException') {
+          // Session already exists — idempotent, skip
+          return;
+        }
+        throw err;
+      });
     });
 
     await context.step('write-package', async () => {
@@ -191,7 +201,16 @@ export const handler = withDurableExecution(
         questions: selectedQuestions,
         ttl,
       };
-      await ddb.send(new PutCommand({ TableName: GAME_TABLE, Item: pkg }));
+      await ddb.send(new PutCommand({
+        TableName: GAME_TABLE,
+        Item: pkg,
+        ConditionExpression: 'attribute_not_exists(PK)',
+      })).catch((err: unknown) => {
+        if ((err as { name?: string })?.name === 'ConditionalCheckFailedException') {
+          return;
+        }
+        throw err;
+      });
     });
 
     // ---------------------------------------------------------------

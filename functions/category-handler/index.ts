@@ -9,6 +9,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   ScanCommand,
+  QueryCommand,
   UpdateCommand,
   BatchWriteCommand,
 } from '@aws-sdk/lib-dynamodb';

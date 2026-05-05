@@ -357,7 +357,7 @@ export const handler = withDurableExecution(
       };
     });
 
-    // Step 2: Write PLAYER# record
+    // Step 2: Write PLAYER# record (conditional — skip if already exists from duplicate invocation)
     await context.step('write-player-record', async () => {
       await ddb.send(new PutCommand({
         TableName: TABLE,
@@ -373,7 +373,14 @@ export const handler = withDurableExecution(
           joinedAt: new Date().toISOString(),
           ttl: ttl24h(),
         },
-      }));
+        ConditionExpression: 'attribute_not_exists(PK)',
+      })).catch((err: unknown) => {
+        if ((err as { name?: string })?.name === 'ConditionalCheckFailedException') {
+          // Already exists — idempotent, skip
+          return;
+        }
+        throw err;
+      });
     });
 
     // Step 3: Wait for game start

@@ -2,32 +2,34 @@
 
 A real-time multiplayer trivia game built with AWS AppSync Events, Lambda Durable Functions, and Vue.js. A host creates a session, players join via QR code, answer questions at their own pace, and compete on a live leaderboard.
 
-All communication flows through AppSync Events (WebSocket) — no API Gateway.
+Commands (create, start, cancel, join) use a REST API (API Gateway HTTP API). Real-time updates (game events, questions, leaderboard) flow through AppSync Events (WebSocket).
 
 ## Architecture
 
 ```mermaid
 graph TD
-    Admin["Admin UI"] --> AppSync
-    Player["Player UI"] --> AppSync
-    Leaderboard["Leaderboard UI"] --> AppSync
+    Admin["Admin UI"] --> API["HTTP API<br/>(API Gateway)"]
+    Admin --> AppSync
+    Player["Player UI"] --> API
+    Player --> AppSync
+    Leaderboard["Leaderboard UI"] --> API
+    Leaderboard --> AppSync
 
-    subgraph AppSync["AppSync Events"]
+    subgraph AppSync["AppSync Events (WebSocket)"]
         direction LR
-        ch1["admin/"] ~~~ ch2["player/"] ~~~ ch3["leaderboard/"] ~~~ ch4["game/"] ~~~ ch5["categories/"]
+        ch2["player/"] ~~~ ch3["leaderboard/"] ~~~ ch4["game/"]
     end
 
-    AppSync --> SH["Session Handler"]
+    API --> AH["API Handler"]
     AppSync --> PM["Participant Manager"]
-    AppSync --> CH["Category Handler"]
 
-    SH -->|async| ODF["Session Orchestrator<br/>(Durable Function)"]
+    AH -->|async| ODF["Session Orchestrator<br/>(Durable Function)"]
+    AH -->|async| POD["Participant Orchestrator<br/>(Durable Function)"]
+    AH --> CH["Category Handler"]
     CH -->|async| CC["Category Creator<br/>(Durable Function)"]
-    PM -->|async| POD["Participant Orchestrator<br/>(Durable Function)"]
-    ODF -->|callback| POD
     CC -->|Bedrock| AI["Claude Sonnet"]
 
-    SH --> DDB[("DynamoDB")]
+    AH --> DDB[("DynamoDB")]
     ODF --> DDB
     POD --> DDB
     CH --> DDB
@@ -195,14 +197,12 @@ Each Lambda function is fully self-contained with its own dependencies. Shared u
 
 ## Key Design Decisions
 
-- **All-WebSocket**: No API Gateway. All client-server communication through AppSync Events.
+- **Hybrid API**: REST (API Gateway HTTP API) for commands and state queries. WebSocket (AppSync Events) for real-time push updates.
+- **Client-driven game start**: POD includes its callback token in join_ack. Client wakes its own POD when countdown hits zero — no ODF fan-out.
+- **Direct leaderboard publish**: PODs publish score updates directly to the leaderboard channel. No stream handler dependency for gameplay updates.
 - **Durable Functions**: Game and player orchestration use Lambda Durable Functions for reliable state management across long-running game sessions.
 - **AI-generated categories**: Bedrock Claude generates trivia questions on demand via a multi-step pipeline (research → generate → validate → save) with live progress updates.
-- **Cognito auth for hosts**: Admin and category management require authentication. Players join unauthenticated via QR code.
-- **Domain separation**: Session Handler owns game sessions, Category Handler owns category CRUD. Each has its own AppSync namespace.
-- **DDB Streams for leaderboard**: PODs write to DynamoDB, Stream Handler computes and broadcasts leaderboard updates.
-- **Tiered leaderboard**: Top 10 with animated transitions, expandable list for 500+ players.
-- **Post-game report**: Players see which questions they got right/wrong with correct answers.
+- **Cognito auth for hosts**: Admin endpoints require JWT auth. Players join unauthenticated.
 - **Self-contained functions**: Each Lambda bundles all its dependencies (including AWS SDK) — no layers, no shared external imports.
 
 ## Tech Stack

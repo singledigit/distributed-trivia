@@ -241,8 +241,14 @@ ${JSON.stringify(structurallyValid)}`,
       ? [] // No METADATA for expand — category already exists
       : [{ PK: `CATEGORY#${categoryId}`, SK: 'METADATA', categoryId, categoryName, categoryEmoji, categoryColor }];
 
-    for (const q of validatedQuestions) {
-      const questionId = generateUlid();
+    // Generate question IDs inside a step for replay determinism
+    const questionIds = await context.step('generate-question-ids', async () => {
+      return validatedQuestions.map(() => generateUlid());
+    });
+
+    for (let i = 0; i < validatedQuestions.length; i++) {
+      const q = validatedQuestions[i];
+      const questionId = questionIds[i];
       items.push({
         PK: `CATEGORY#${categoryId}`,
         SK: `QUESTION#${questionId}`,

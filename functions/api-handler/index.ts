@@ -253,10 +253,18 @@ async function handleStartSession(event: APIGatewayEvent): Promise<APIResponse> 
   if (!metadata.odfCallbackToken) return respond(409, { error: 'Session is not ready to start yet — try again in a moment' });
   if (metadata.status !== 'waiting') return respond(409, { error: `Cannot start session in status: ${metadata.status}` });
 
-  await lambda.send(new SendDurableExecutionCallbackSuccessCommand({
-    CallbackId: metadata.odfCallbackToken,
-    Result: new TextEncoder().encode(JSON.stringify({ action: 'start' })),
-  }));
+  try {
+    await lambda.send(new SendDurableExecutionCallbackSuccessCommand({
+      CallbackId: metadata.odfCallbackToken,
+      Result: new TextEncoder().encode(JSON.stringify({ action: 'start' })),
+    }));
+  } catch (err: unknown) {
+    const errName = (err as { name?: string })?.name;
+    if (errName === 'CallbackTimeoutException' || errName === 'CallbackAlreadyCompletedException') {
+      return respond(409, { error: 'Game has already been started or cancelled' });
+    }
+    throw err;
+  }
 
   return respond(200, { status: 'starting', sessionId });
 }
