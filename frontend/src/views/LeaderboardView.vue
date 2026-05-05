@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { subscribe } from '../appsync-events'
+import { getSession } from '../api'
 import { useCountdown } from '../composables/useCountdown'
 import QRCode from 'qrcode'
 
@@ -156,7 +157,9 @@ function startGameTimer(gameStartMs: number, limitMinutes: number) {
 
 function handleLeaderboardEvent(event: unknown) {
   const data = event as Record<string, unknown>
-  switch (data.type) {
+  const type = (data.type as string) ?? 'snapshot'
+  console.log('[leaderboard] event received:', type, data)
+  switch (type) {
     case 'snapshot': handleSnapshot(data); break
     case 'player_list': handlePlayerList(data); break
     case 'player_update': handlePlayerUpdate(data); break
@@ -272,6 +275,15 @@ onMounted(async () => {
     width: 300, margin: 2, color: { dark: '#f0eef5', light: '#00000000' },
   })
 
+  // Fetch initial state via REST — reliable, no race condition
+  try {
+    const snapshot = await getSession(sessionId)
+    handleLeaderboardEvent(snapshot)
+  } catch (err) {
+    console.error('[leaderboard] Failed to fetch initial state:', err)
+  }
+
+  // Subscribe for real-time updates
   try {
     const unsubLeaderboard = await subscribe(`/leaderboard/${sessionId}`, handleLeaderboardEvent)
     unsubscribes.push(unsubLeaderboard)

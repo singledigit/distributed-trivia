@@ -169,6 +169,7 @@ function connect(): Promise<void> {
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data as string)
+      if (msg.type !== 'ka') console.log('[appsync] ws message:', msg.type, msg.id ?? '', msg)
 
       switch (msg.type) {
         case 'connection_ack': {

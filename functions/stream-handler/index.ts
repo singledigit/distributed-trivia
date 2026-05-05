@@ -1,32 +1,27 @@
+/**
+ * Stream Handler — DDB Streams trigger
+ *
+ * Watches GameTable for:
+ * - PLAYER# INSERT → publishes player_list to leaderboard channel (new join)
+ *
+ * Score updates and player_completed are now published directly by the POD.
+ * This handler only handles join notifications.
+ */
+
 import type { DynamoDBStreamEvent, DynamoDBBatchResponse, DynamoDBRecord } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
-import { publishToChannel, sessionPK, PLAYER_PREFIX, ACTIVITY_PREFIX, paginatedQuery, statusDotColor } from './shared/index';
-import type { PlayerRecord, ActivityRecord } from './shared/index';
+import { publishToChannel, sessionPK, PLAYER_PREFIX, paginatedQuery } from './shared/index';
+import type { PlayerRecord } from './shared/index';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const TABLE_NAME = process.env.GAME_TABLE_NAME!;
 
-/**
- * Extract sessionId from PK value like "SESSION#abc123".
- */
 function extractSessionId(pk: string): string {
   return pk.replace('SESSION#', '');
 }
 
-/**
- * Extract participantId from an ACTIVITY# SK.
- * SK format: ACTIVITY#{participantId}#{questionNum}#{seq}
- */
-function extractParticipantIdFromActivitySK(sk: string): string {
-  const parts = sk.split('#');
-  return parts[1];
-}
-
-/**
- * Query all PLAYER# records for a session (paginated).
- */
 async function queryPlayers(sessionId: string): Promise<PlayerRecord[]> {
   return paginatedQuery<PlayerRecord>(ddb, {
     TableName: TABLE_NAME,
@@ -34,23 +29,6 @@ async function queryPlayers(sessionId: string): Promise<PlayerRecord[]> {
     ExpressionAttributeValues: {
       ':pk': sessionPK(sessionId),
       ':prefix': PLAYER_PREFIX,
-    },
-  });
-}
-
-/**
- * Query all ACTIVITY# records for a specific player in a session.
- */
-async function queryPlayerActivities(
-  sessionId: string,
-  participantId: string,
-): Promise<ActivityRecord[]> {
-  return paginatedQuery<ActivityRecord>(ddb, {
-    TableName: TABLE_NAME,
-    KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-    ExpressionAttributeValues: {
-      ':pk': sessionPK(sessionId),
-      ':prefix': `${ACTIVITY_PREFIX}${participantId}#`,
     },
   });
 }
@@ -70,83 +48,13 @@ async function handlePlayerInsert(sessionId: string): Promise<void> {
 
   await publishToChannel({
     channel: `leaderboard/${sessionId}`,
-    events: [
-      {
-        type: 'player_list',
-        players: playerList,
-      },
-    ],
+    events: [{ type: 'player_list', players: playerList }],
   });
 }
 
-/**
- * Handle ACTIVITY# INSERT — compute score/status and publish player state update.
- */
-async function handleActivityInsert(
-  sessionId: string,
-  newActivity: ActivityRecord,
-): Promise<void> {
-  const participantId = newActivity.participantId;
-
-  // Query ALL activity records for this player to compute total score
-  const activities = await queryPlayerActivities(sessionId, participantId);
-
-  // Total score = sum of points for all correct entries
-  const totalScore = activities
-    .filter((a) => a.status === 'correct')
-    .reduce((sum, a) => sum + a.points, 0);
-
-  // Current question number: count distinct questionIds with non-extended status
-  const answeredQuestions = new Set(
-    activities.filter((a) => a.status !== 'extended').map((a) => a.questionId),
-  );
-  const currentQuestion = answeredQuestions.size;
-
-  // Status dot color based on the latest activity action
-  const dotColor = statusDotColor(newActivity.status);
-
-  await publishToChannel({
-    channel: `leaderboard/${sessionId}`,
-    events: [
-      {
-        type: 'player_update',
-        participantId,
-        totalScore,
-        currentQuestion,
-        statusDot: dotColor,
-        latestStatus: newActivity.status,
-      },
-    ],
-  });
-}
-
-/**
- * Handle PLAYER# MODIFY with status change to Completed.
- */
-async function handlePlayerCompleted(
-  sessionId: string,
-  player: PlayerRecord,
-): Promise<void> {
-  await publishToChannel({
-    channel: `leaderboard/${sessionId}`,
-    events: [
-      {
-        type: 'player_completed',
-        participantId: player.participantId,
-        displayName: player.displayName,
-        statusDot: 'checkmark',
-      },
-    ],
-  });
-}
-
-/**
- * Process a single DDB stream record.
- */
 async function processRecord(record: DynamoDBRecord): Promise<void> {
   const eventName = record.eventName;
   const newImage = record.dynamodb?.NewImage;
-  const oldImage = record.dynamodb?.OldImage;
 
   if (!newImage) return;
 
@@ -161,25 +69,6 @@ async function processRecord(record: DynamoDBRecord): Promise<void> {
   // PLAYER# INSERT — new player joined
   if (eventName === 'INSERT' && sk.startsWith(PLAYER_PREFIX)) {
     await handlePlayerInsert(sessionId);
-    return;
-  }
-
-  // ACTIVITY# INSERT — new activity recorded
-  if (eventName === 'INSERT' && sk.startsWith(ACTIVITY_PREFIX)) {
-    await handleActivityInsert(sessionId, item as ActivityRecord);
-    return;
-  }
-
-  // PLAYER# MODIFY — check for status change to Completed
-  if (eventName === 'MODIFY' && sk.startsWith(PLAYER_PREFIX)) {
-    const oldItem = oldImage ? unmarshall(oldImage as Record<string, any>) : null;
-    const newStatus = item.status as string;
-    const oldStatus = oldItem?.status as string | undefined;
-
-    if (newStatus === 'completed' && oldStatus !== 'completed') {
-      await handlePlayerCompleted(sessionId, item as PlayerRecord);
-    }
-    return;
   }
 }
 

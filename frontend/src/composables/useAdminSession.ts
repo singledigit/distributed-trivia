@@ -1,5 +1,6 @@
-import { ref, computed, watch, onUnmounted } from 'vue'
-import { subscribe, publish } from '../appsync-events'
+import { ref, computed, onUnmounted } from 'vue'
+import { subscribe } from '../appsync-events'
+import { listCategories as apiListCategories, createSession as apiCreateSession, startSession as apiStartSession, cancelSession as apiCancelSession, getSession as apiGetSession } from '../api'
 import { useCountdown } from './useCountdown'
 import QRCode from 'qrcode'
 
@@ -8,7 +9,7 @@ import QRCode from 'qrcode'
 // ---------------------------------------------------------------------------
 
 export type GameMode = 'timed' | 'question_count'
-export type SessionPhase = 'loading' | 'setup' | 'lobby' | 'playing' | 'finished' | 'cancelled'
+export type SessionPhase = 'idle' | 'loading' | 'setup' | 'lobby' | 'playing' | 'finished' | 'cancelled'
 
 export interface Player {
   participantId: string
@@ -40,7 +41,7 @@ const ADMIN_STORAGE_KEY = 'trivia_admin_session'
 
 export function useAdminSession() {
   // State
-  const phase = ref<SessionPhase>('loading')
+  const phase = ref<SessionPhase>('idle')
   const sessionId = ref('')
   const qrCodeDataUrl = ref('')
   const sessionUrl = ref('')
@@ -94,45 +95,8 @@ export function useAdminSession() {
   }
 
   // -----------------------------------------------------------------------
-  // Snapshot waiting — reactive watch instead of polling
-  // -----------------------------------------------------------------------
-
-  function waitForSnapshot(timeoutMs: number): Promise<void> {
-    return new Promise<void>(resolve => {
-      const timer = setTimeout(() => { unwatch(); resolve() }, timeoutMs)
-      const unwatch = watch(snapshotReceived, (val) => {
-        if (val) { clearTimeout(timer); unwatch(); resolve() }
-      })
-      // Resolve immediately if already received
-      if (snapshotReceived.value) { clearTimeout(timer); unwatch(); resolve() }
-    })
-  }
-
-  // -----------------------------------------------------------------------
   // Channel event handlers
   // -----------------------------------------------------------------------
-
-  function handleDefaultChannelEvent(event: unknown) {
-    const data = event as Record<string, unknown>
-    switch (data.type) {
-      case 'categories':
-        if (Array.isArray(data.categories)) {
-          categories.value = (data.categories as Array<Record<string, string>>).map((c) => ({
-            categoryId: c.categoryId,
-            categoryName: c.categoryName,
-          })).sort((a, b) => a.categoryName.localeCompare(b.categoryName))
-          if (categories.value.length > 0 && !selectedCategoryId.value) {
-            selectedCategoryId.value = categories.value[0].categoryId
-          }
-        }
-        break
-      case 'ack':
-        if (data.sessionId && !sessionId.value) {
-          handleCreateAck(data.sessionId as string)
-        }
-        break
-    }
-  }
 
   function handleAdminSessionEvent(event: unknown) {
     const data = event as Record<string, unknown>
@@ -276,12 +240,19 @@ export function useAdminSession() {
   async function initialize() {
     phase.value = 'loading'
 
-    const unsub = await subscribe('/admin/default', handleDefaultChannelEvent)
-    unsubscribers.push(unsub)
-    const catUnsub = await subscribe('/categories/default', handleDefaultChannelEvent)
-    unsubscribers.push(catUnsub)
-
-    await publish('/categories/default', [{ action: 'list' }])
+    // Fetch categories via REST
+    try {
+      const cats = await apiListCategories()
+      categories.value = cats.map(c => ({
+        categoryId: c.categoryId,
+        categoryName: c.categoryName,
+      })).sort((a, b) => a.categoryName.localeCompare(b.categoryName))
+      if (categories.value.length > 0 && !selectedCategoryId.value) {
+        selectedCategoryId.value = categories.value[0].categoryId
+      }
+    } catch (err) {
+      console.error('[admin] Failed to fetch categories:', err)
+    }
 
     const cached = loadAdminState()
     if (cached) {
@@ -294,12 +265,14 @@ export function useAdminSession() {
       await subscribeToSessionChannels(cached.sessionId)
       if (!qrCodeDataUrl.value) await generateQR(cached.sessionId)
 
+      // Restore state from REST API
       snapshotReceived.value = false
       try {
-        await publish(`/admin/${cached.sessionId}`, [{ action: 'status' }])
-      } catch { /* status request failed — cached state is still shown */ }
-
-      await waitForSnapshot(5000)
+        const snapshot = await apiGetSession(cached.sessionId)
+        restoreFromSnapshot(snapshot as unknown as Record<string, unknown>)
+      } catch {
+        // REST failed — cached state is still shown
+      }
     } else {
       phase.value = 'setup'
     }
@@ -321,38 +294,38 @@ export function useAdminSession() {
     createStartTime = Date.now()
 
     try {
-      await publish('/admin/default', [
-        {
-          action: 'create',
-          categoryId: selectedCategoryId.value,
-          mode: mode.value,
-          ...(mode.value === 'timed'
-            ? { timeLimitMinutes: timeLimitMinutes.value }
-            : { questionCount: questionCount.value }),
-        },
-      ])
+      // Generate sessionId client-side so we can subscribe before the ODF starts
+      const newSessionId = crypto.randomUUID().replace(/-/g, '').slice(0, 26).toUpperCase()
+      sessionId.value = newSessionId
+      await generateQR(newSessionId)
+      await subscribeToSessionChannels(newSessionId)
+
+      // Now create via REST — ODF will publish to channels we're already on
+      await apiCreateSession({
+        categoryId: selectedCategoryId.value,
+        mode: mode.value,
+        sessionId: newSessionId,
+        ...(mode.value === 'timed'
+          ? { timeLimitMinutes: timeLimitMinutes.value }
+          : { questionCount: questionCount.value }),
+      })
+
+      if (createStartTime) {
+        console.log(`[timing] Create → Ack: ${Date.now() - createStartTime}ms`)
+        createStartTime = 0
+      }
+      creating.value = false
+      phase.value = 'lobby'
+      saveAdminState()
     } catch (err: unknown) {
       createError.value = err instanceof Error ? err.message : 'Failed to create session'
       creating.value = false
     }
   }
 
-  async function handleCreateAck(newSessionId: string) {
-    if (createStartTime) {
-      console.log(`[timing] Create → Ack: ${Date.now() - createStartTime}ms`)
-      createStartTime = 0
-    }
-    sessionId.value = newSessionId
-    await generateQR(newSessionId)
-    await subscribeToSessionChannels(newSessionId)
-    creating.value = false
-    phase.value = 'lobby'
-    saveAdminState()
-  }
-
   async function startGame() {
     try {
-      await publish(`/admin/${sessionId.value}`, [{ action: 'start' }])
+      await apiStartSession(sessionId.value)
     } catch (err) {
       console.error('Failed to start game', err)
     }
@@ -360,7 +333,7 @@ export function useAdminSession() {
 
   async function cancelGame() {
     try {
-      await publish(`/admin/${sessionId.value}`, [{ action: 'cancel' }])
+      await apiCancelSession(sessionId.value)
     } catch (err) {
       console.error('Failed to cancel game', err)
     }

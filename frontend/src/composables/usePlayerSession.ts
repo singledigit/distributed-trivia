@@ -1,5 +1,6 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { subscribe, publish } from '../appsync-events'
+import { joinSession as apiJoinSession } from '../api'
 import { useCountdown } from './useCountdown'
 
 // ---------------------------------------------------------------------------
@@ -80,7 +81,6 @@ export function usePlayerSession(sessionId: string) {
   const questionsAnswered = ref(0)
   const totalQuestions = ref(0)
   const questionResults = ref<QuestionResult[]>([])
-  const readyCallbackToken = ref('')
   const waitingEndCallbackToken = ref('')
 
   const { seconds: countdownSeconds, start: startCountdownTimer, stop: stopCountdown } = useCountdown()
@@ -155,7 +155,6 @@ export function usePlayerSession(sessionId: string) {
 
   function playerChannel() { return `/player/${sessionId}/${participantId.value}` }
   function gameChannel() { return `/game/${sessionId}` }
-  function joinChannel() { return `/player/${sessionId}/join` }
 
   // -----------------------------------------------------------------------
   // Feedback timeout
@@ -194,17 +193,11 @@ export function usePlayerSession(sessionId: string) {
         categoryEmoji.value = (data.categoryEmoji as string) ?? ''
         categoryColor.value = (data.categoryColor as string) ?? ''
         gameMode.value = (data.mode as string) ?? ''
+        // Store the start callback token — client uses it to wake POD at game start
+        if (data.callbackToken) {
+          lastCallbackToken.value = data.callbackToken as string
+        }
         phase.value = 'lobby'
-        saveState()
-        break
-      case 'game_starting':
-        readyCallbackToken.value = data.callbackToken as string
-        lastCallbackToken.value = data.callbackToken as string
-        startCountdown(data.startTime as string)
-        break
-      case 'waiting_for_ready':
-        readyCallbackToken.value = data.callbackToken as string
-        lastCallbackToken.value = data.callbackToken as string
         saveState()
         break
       case 'question':
@@ -266,7 +259,9 @@ export function usePlayerSession(sessionId: string) {
     const type = data.type as string
     switch (type) {
       case 'game_started':
-        if (phase.value === 'lobby' && !readyCallbackToken.value) { /* wait for game_starting */ }
+        if (phase.value === 'lobby' && data.startTime) {
+          startCountdown(data.startTime as string)
+        }
         break
       case 'times_up':
       case 'game_cancelled':
@@ -292,16 +287,17 @@ export function usePlayerSession(sessionId: string) {
 
   function startCountdown(startTimeStr: string) {
     phase.value = 'countdown'
-    startCountdownTimer(startTimeStr, () => sendReady())
+    startCountdownTimer(startTimeStr, () => wakePod())
     saveState()
   }
 
-  async function sendReady() {
-    if (!readyCallbackToken.value) return
+  /** Wake the POD by sending the start callback token */
+  async function wakePod() {
+    const token = lastCallbackToken.value
+    if (!token) return
     try {
-      await publish(playerChannel(), [{ action: 'ready', callbackToken: readyCallbackToken.value }])
-      readyCallbackToken.value = ''
-    } catch (err) { console.error('[player] Failed to send ready:', err) }
+      await publish(playerChannel(), [{ action: 'start', callbackToken: token }])
+    } catch (err) { console.error('[player] Failed to wake POD:', err) }
   }
 
   async function handleJoin() {
@@ -311,54 +307,47 @@ export function usePlayerSession(sessionId: string) {
     joinStartTime = Date.now()
 
     const myName = displayName.value.trim()
-    let joined = false
-    let joinUnsub: (() => void) | null = null
 
     try {
-      joinUnsub = await subscribe(joinChannel(), (event: unknown) => {
-        const data = event as Record<string, unknown>
-        if (data.type === 'joined' && data.displayName === myName) {
-          joined = true
-          participantId.value = data.participantId as string
-          displayName.value = data.displayName as string
+      // Generate participantId client-side so we can subscribe BEFORE the POD starts
+      const pid = crypto.randomUUID().replace(/-/g, '').slice(0, 26).toUpperCase()
+      participantId.value = pid
+      displayName.value = myName
+      saveState()
+
+      // Subscribe to player and game channels FIRST — ensures we never miss join_ack
+      await subscribeToChannels()
+
+      // Now call REST join — POD will be invoked and publish to the channel we're already on
+      const result = await apiJoinSession(sessionId, myName, pid)
+      // Update with server-confirmed values (in case of idempotent retry with different ID)
+      if (result.participantId !== pid) {
+        participantId.value = result.participantId
+        // Re-subscribe to the correct channel if ID changed
+        for (const unsub of unsubscribers) unsub()
+        unsubscribers.length = 0
+        await subscribeToChannels()
+      }
+      saveState()
+
+      // Phase will transition to 'lobby' when join_ack arrives from POD via WebSocket
+      // Set a timeout in case the POD is slow
+      const joinTimeout = setTimeout(() => {
+        if (phase.value === 'joining') {
+          phase.value = 'lobby'
           saveState()
-          if (joinUnsub) joinUnsub()
-          joinUnsub = null
-          subscribeToChannels()
-        } else if (data.type === 'error') {
-          joined = true
-          nameError.value = data.message as string
-          phase.value = 'join'
+        }
+      }, 15000)
+
+      const unwatch = watch(phase, (newPhase) => {
+        if (newPhase !== 'joining') {
+          clearTimeout(joinTimeout)
+          unwatch()
         }
       })
-      unsubscribers.push(() => { if (joinUnsub) joinUnsub() })
-
-      for (let attempt = 1; attempt <= 3 && !joined; attempt++) {
-        await publish(joinChannel(), [{ action: 'join', displayName: myName }])
-
-        await new Promise<void>(resolve => {
-          const timeout = setTimeout(() => resolve(), 5000)
-          const check = setInterval(() => {
-            if (joined || phase.value === 'lobby' || phase.value === 'join') {
-              clearTimeout(timeout)
-              clearInterval(check)
-              resolve()
-            }
-          }, 200)
-        })
-
-        if (!joined && attempt < 3) {
-          console.log(`[player] Join attempt ${attempt} timed out, retrying...`)
-        }
-      }
-
-      if (!joined && phase.value === 'joining') {
-        nameError.value = 'Could not connect. Please try again.'
-        phase.value = 'join'
-      }
     } catch (err) {
       console.error('[player] Join failed:', err)
-      nameError.value = 'Failed to join. Please try again.'
+      nameError.value = err instanceof Error ? err.message : 'Failed to join. Please try again.'
       phase.value = 'join'
     }
   }
@@ -396,11 +385,24 @@ export function usePlayerSession(sessionId: string) {
   }
 
   async function handleGameEnd() {
-    const token = waitingEndCallbackToken.value || lastCallbackToken.value
-    if (token && phase.value !== 'game_over') {
+    if (phase.value === 'game_over' || phase.value === 'waiting_done') return
+
+    // Retry sending complete — the POD may have advanced to a new callback token
+    let lastAttemptedToken = ''
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const token = waitingEndCallbackToken.value || lastCallbackToken.value
+      if (!token || token === lastAttemptedToken) {
+        await new Promise(r => setTimeout(r, 300))
+        continue
+      }
+      lastAttemptedToken = token
       try {
         await publish(playerChannel(), [{ action: 'complete', callbackToken: token }])
       } catch (err) { console.error('[player] Failed to send complete:', err) }
+      // Give the POD time to process
+      await new Promise(r => setTimeout(r, 300))
+      // If game_complete arrived, stop retrying
+      if (phase.value === 'game_over' as GamePhase) return
     }
   }
 

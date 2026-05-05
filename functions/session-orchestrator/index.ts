@@ -1,19 +1,17 @@
 import { withDurableExecution, DurableContext, CallbackError } from '@aws/durable-execution-sdk-js';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { LambdaClient, SendDurableExecutionCallbackSuccessCommand } from '@aws-sdk/client-lambda';
 import {
   sessionPK,
   categoryPK,
   METADATA_SK,
   PACKAGE_SK,
   QUESTION_PREFIX,
-  PLAYER_PREFIX,
   ttl24h,
   publishToChannel,
   paginatedQuery,
 } from './shared/index';
-import type { Question, GameMode, Difficulty, SessionMetadata, SessionPackage, PlayerRecord } from './shared/index';
+import type { Question, GameMode, Difficulty, SessionMetadata, SessionPackage } from './shared/index';
 
 // --- Types ---
 
@@ -32,7 +30,6 @@ interface CallbackPayload {
 // --- Clients (created outside handler for reuse across replays) ---
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-const lambda = new LambdaClient({});
 
 const GAME_TABLE = process.env.GAME_TABLE_NAME!;
 const QUESTIONS_TABLE = process.env.QUESTIONS_TABLE_NAME!;
@@ -93,6 +90,14 @@ function selectBalancedQuestions(allQuestions: Question[], count: number): Quest
 
   // Final shuffle so difficulties are mixed
   return shuffle(selected);
+}
+
+/** Parse a callback result — the SDK may return a JSON string */
+function parseCallback<T>(raw: unknown): T {
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) as T; } catch { return raw as T; }
+  }
+  return raw as T;
 }
 
 // --- Handler ---
@@ -204,7 +209,7 @@ export const handler = withDurableExecution(
     // ---------------------------------------------------------------
     let callbackResult: CallbackPayload;
     try {
-      callbackResult = await context.waitForCallback<CallbackPayload>(
+      const raw = await context.waitForCallback<CallbackPayload>(
         'wait-for-start-or-cancel',
         async (callbackId) => {
           // Store the callback token on the METADATA record so Session Handler can find it
@@ -217,6 +222,7 @@ export const handler = withDurableExecution(
         },
         { timeout: { minutes: 30 } }, // Auto-cancel if host doesn't start within 30 min
       );
+      callbackResult = parseCallback<CallbackPayload>(raw);
     } catch (error) {
       if (error instanceof CallbackError) {
         context.logger.error('Callback error while waiting for start/cancel', { error: String(error) });
@@ -260,58 +266,12 @@ export const handler = withDurableExecution(
     // ---------------------------------------------------------------
     context.logger.info('Game starting');
 
-    // Step: Scan PLAYER# records for callback tokens
-    const players = await context.step('scan-players', async () => {
-      return paginatedQuery<PlayerRecord>(ddb, {
-        TableName: GAME_TABLE,
-        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-        ExpressionAttributeValues: {
-          ':pk': sessionPK(sessionId),
-          ':prefix': PLAYER_PREFIX,
-        },
-      });
-    });
-
-    // Guard: cannot start with zero players
-    if (players.length === 0) {
-      context.logger.warn('No players joined — cancelling game');
-      await context.step('cancel-no-players', async () => {
-        await updateSessionStatus(sessionId, 'cancelled');
-        await publishToChannel({
-          channel: `game/${sessionId}`,
-          events: [{ type: 'game_cancelled', sessionId, reason: 'no_players' }],
-        });
-      });
-      return { sessionId, status: 'cancelled', reason: 'no_players' };
-    }
-
     // Step: Compute start time (now + 5 seconds)
     const startTime = await context.step('compute-start-time', async () => {
       return new Date(Date.now() + 5000).toISOString();
     });
 
-    // Map: Send start callback to all PODs in parallel
-    if (players.length > 0) {
-      const playersWithTokens = players.filter(p => p.podCallbackToken);
-
-      if (playersWithTokens.length > 0) {
-        await context.map(
-          'send-start-to-pods',
-          playersWithTokens,
-          async (ctx, player, index) => {
-            return await ctx.step(`start-pod-${player.participantId}`, async () => {
-              await lambda.send(new SendDurableExecutionCallbackSuccessCommand({
-                CallbackId: player.podCallbackToken!,
-                Result: new TextEncoder().encode(JSON.stringify({ action: 'start', startTime })),
-              }));
-            });
-          },
-          { maxConcurrency: 10 },
-        );
-      }
-    }
-
-    // Step: Publish start time to game channel
+    // Step: Publish start time to game channel — clients wake their own PODs
     await context.step('publish-game-start', async () => {
       await publishToChannel({
         channel: `game/${sessionId}`,
@@ -345,7 +305,7 @@ export const handler = withDurableExecution(
       );
 
       // If we get here, the host sent a cancel callback
-      const parsed = typeof endSignal === 'string' ? JSON.parse(endSignal) : endSignal;
+      const parsed = parseCallback<CallbackPayload>(endSignal);
       if (parsed?.action === 'cancel') {
         cancelledByHost = true;
       }

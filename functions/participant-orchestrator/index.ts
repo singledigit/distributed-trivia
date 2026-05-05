@@ -2,10 +2,14 @@
  * Participant Orchestrator (POD) — Durable Function
  *
  * Per-player game orchestration: join ack, wait for start, question delivery,
- * scoring, activity logging, timeout handling, and post-game report.
+ * scoring, and post-game report.
  *
  * Each question is processed in its own child context for clean isolation
  * of the waitForCallback/timeout/retry logic.
+ *
+ * The POD publishes leaderboard updates directly — no stream handler dependency
+ * for score updates. The POD also includes its start callback token in join_ack
+ * so the client can wake it directly when the game starts.
  */
 
 import { withDurableExecution, DurableContext, CallbackError } from '@aws/durable-execution-sdk-js';
@@ -16,10 +20,10 @@ import {
   PACKAGE_SK,
   METADATA_SK,
   playerSK,
-  activitySK,
   ttl24h,
   calculateScore,
   publishToChannel,
+  statusDotColor,
 } from './shared/index';
 import type { Question, PlayerStatus, ActivityStatus } from './shared/index';
 
@@ -31,7 +35,7 @@ const TABLE = process.env.GAME_TABLE_NAME!;
 // ---------------------------------------------------------------------------
 
 interface CallbackPayload {
-  action: 'start' | 'ready' | 'answer' | 'skip' | 'more_time' | 'complete';
+  action: 'start' | 'answer' | 'skip' | 'more_time' | 'complete';
   startTime?: string;
   selectedOption?: string;
 }
@@ -73,38 +77,7 @@ function parseCallback<T>(raw: unknown): T {
   return raw as T;
 }
 
-/** Write an activity record to DDB */
-async function writeActivity(
-  ctx: DurableContext,
-  stepName: string,
-  pk: string,
-  participantId: string,
-  questionId: string,
-  questionNum: number,
-  seq: number,
-  status: ActivityStatus,
-  answer: string | null,
-  points: number,
-) {
-  await ctx.step(stepName, async () => {
-    await ddb.send(new PutCommand({
-      TableName: TABLE,
-      Item: {
-        PK: pk,
-        SK: activitySK(participantId, questionNum, seq),
-        participantId,
-        questionId,
-        answer,
-        status,
-        points,
-        timestamp: new Date().toISOString(),
-        ttl: ttl24h(),
-      },
-    }));
-  });
-}
-
-/** Check if an error is a callback timeout — works both at top-level and inside child contexts */
+/** Check if an error is a callback timeout */
 function isCallbackTimeout(error: unknown): boolean {
   if (error instanceof CallbackError) return true;
   const msg = (error as { message?: string })?.message ?? '';
@@ -140,6 +113,7 @@ async function processQuestion(
   currentScore: number,
   pk: string,
   participantId: string,
+  sessionId: string,
   playerChannel: string,
 ): Promise<QuestionOutcome> {
   const questionNum = qIndex + 1;
@@ -176,9 +150,7 @@ async function processQuestion(
           const responseRaw = await qCtx.waitForCallback<CallbackPayload>(
             `wait-seq${seq}`,
             async (callbackToken) => {
-              qCtx.logger.info(`Q${questionNum} seq${seq}: setup fn called, sending question`);
               await sendQuestion(callbackToken);
-              qCtx.logger.info(`Q${questionNum} seq${seq}: question sent`);
             },
             { timeout: { seconds: 15 } },
           );
@@ -192,25 +164,47 @@ async function processQuestion(
 
           // Player wants more time
           if (response.action === 'more_time') {
-            await writeActivity(qCtx, `activity-seq${seq}-extended`, pk, participantId, question.questionId, questionNum, seq, 'extended', null, 0);
             seq++;
             continue;
           }
 
           // Player answered or skipped
           if (response.action === 'answer' || response.action === 'skip') {
-            // Validate the selected option is actually one of the choices
             if (response.action === 'answer' && response.selectedOption && !question.options.includes(response.selectedOption)) {
               qCtx.logger.warn('Invalid answer option submitted', { selectedOption: response.selectedOption });
               seq++;
-              continue; // Re-send the question with a new callback token
+              continue;
             }
 
             const isCorrect = response.action === 'answer' && response.selectedOption === question.correctAnswer;
             const points = response.action === 'skip' ? 0 : calculateScore(question.difficulty, isCorrect);
             const activityStatus: ActivityStatus = response.action === 'skip' ? 'skipped' : isCorrect ? 'correct' : 'incorrect';
+            const newScore = currentScore + points;
 
-            await writeActivity(qCtx, `activity-seq${seq}`, pk, participantId, question.questionId, questionNum, seq, activityStatus, response.selectedOption ?? null, points);
+            // Update PLAYER# record with score and publish leaderboard update
+            await qCtx.step(`update-score-q${questionNum}`, async () => {
+              await ddb.send(new UpdateCommand({
+                TableName: TABLE,
+                Key: { PK: pk, SK: playerSK(participantId) },
+                UpdateExpression: 'SET score = :score, currentQuestion = :cq, statusDot = :dot',
+                ExpressionAttributeValues: {
+                  ':score': newScore,
+                  ':cq': questionNum,
+                  ':dot': statusDotColor(activityStatus),
+                },
+              }));
+              await publishToChannel({
+                channel: `leaderboard/${sessionId}`,
+                events: [{
+                  type: 'player_update',
+                  participantId,
+                  totalScore: newScore,
+                  currentQuestion: questionNum,
+                  statusDot: statusDotColor(activityStatus),
+                  latestStatus: activityStatus,
+                }],
+              });
+            });
 
             return {
               score: points,
@@ -231,9 +225,8 @@ async function processQuestion(
         } catch (error) {
           if (!isCallbackTimeout(error)) throw error;
 
-          // Timeout — write activity, send timeout prompt
+          // Timeout — send timeout prompt
           qCtx.logger.info(`Q${questionNum} seq${seq}: TIMEOUT FIRED`);
-          await writeActivity(qCtx, `activity-seq${seq}-timeout`, pk, participantId, question.questionId, questionNum, seq, 'extended', null, 0);
           seq++;
 
           try {
@@ -257,7 +250,32 @@ async function processQuestion(
               const isCorrect = timeoutResponse.action === 'answer' && timeoutResponse.selectedOption === question.correctAnswer;
               const points = timeoutResponse.action === 'skip' ? 0 : calculateScore(question.difficulty, isCorrect);
               const activityStatus: ActivityStatus = timeoutResponse.action === 'skip' ? 'skipped' : isCorrect ? 'correct' : 'incorrect';
-              await writeActivity(qCtx, `activity-seq${seq}-resolve`, pk, participantId, question.questionId, questionNum, seq, activityStatus, timeoutResponse.selectedOption ?? null, points);
+              const newScore = currentScore + points;
+
+              await qCtx.step(`update-score-q${questionNum}-timeout`, async () => {
+                await ddb.send(new UpdateCommand({
+                  TableName: TABLE,
+                  Key: { PK: pk, SK: playerSK(participantId) },
+                  UpdateExpression: 'SET score = :score, currentQuestion = :cq, statusDot = :dot',
+                  ExpressionAttributeValues: {
+                    ':score': newScore,
+                    ':cq': questionNum,
+                    ':dot': statusDotColor(activityStatus),
+                  },
+                }));
+                await publishToChannel({
+                  channel: `leaderboard/${sessionId}`,
+                  events: [{
+                    type: 'player_update',
+                    participantId,
+                    totalScore: newScore,
+                    currentQuestion: questionNum,
+                    statusDot: statusDotColor(activityStatus),
+                    latestStatus: activityStatus,
+                  }],
+                });
+              });
+
               return {
                 score: points,
                 result: { questionNum, questionText: question.questionText, options: question.options, correctAnswer: question.correctAnswer, difficulty: question.difficulty, points, selectedOption: timeoutResponse.selectedOption ?? null, isCorrect, wasSkipped: timeoutResponse.action === 'skip' },
@@ -269,7 +287,28 @@ async function processQuestion(
 
             // Double timeout — auto-skip
             qCtx.logger.info(`Q${questionNum}: Double timeout, auto-skipping`);
-            await writeActivity(qCtx, `activity-seq${seq}-autoskip`, pk, participantId, question.questionId, questionNum, seq, 'skipped', null, 0);
+            await qCtx.step(`update-score-q${questionNum}-autoskip`, async () => {
+              await ddb.send(new UpdateCommand({
+                TableName: TABLE,
+                Key: { PK: pk, SK: playerSK(participantId) },
+                UpdateExpression: 'SET currentQuestion = :cq, statusDot = :dot',
+                ExpressionAttributeValues: {
+                  ':cq': questionNum,
+                  ':dot': 'amber',
+                },
+              }));
+              await publishToChannel({
+                channel: `leaderboard/${sessionId}`,
+                events: [{
+                  type: 'player_update',
+                  participantId,
+                  totalScore: currentScore,
+                  currentQuestion: questionNum,
+                  statusDot: 'amber',
+                  latestStatus: 'skipped',
+                }],
+              });
+            });
             return { score: 0, result: skipResult(question, questionNum), earlyExit: false };
           }
         }
@@ -290,7 +329,7 @@ export const handler = withDurableExecution(
 
     context.logger.info('POD started', { sessionId, participantId, displayName });
 
-    // Step 1: Read question package + session metadata in parallel (single step, one checkpoint)
+    // Step 1: Read question package + session metadata
     const { questions, categoryMeta } = await context.step('read-session-data', async () => {
       const [packageResult, metaResult] = await Promise.all([
         ddb.send(new GetCommand({
@@ -328,38 +367,43 @@ export const handler = withDurableExecution(
           participantId,
           displayName,
           status: 'waiting' as PlayerStatus,
+          score: 0,
+          currentQuestion: 0,
+          statusDot: 'green',
           joinedAt: new Date().toISOString(),
           ttl: ttl24h(),
         },
       }));
     });
 
-    // Step 3: Wait for game start — register callback token BEFORE publishing join_ack
-    // This ensures the podCallbackToken is in DDB before the host can click Start
+    // Step 3: Wait for game start
+    // Include the callback token in join_ack so the CLIENT can wake us directly
     let startPayloadRaw: string;
     try {
-    startPayloadRaw = await context.waitForCallback<string>(
-      'wait-for-start',
-      async (callbackToken) => {
-        // Write callback token to PLAYER# record so ODF can find it
-        await ddb.send(new UpdateCommand({
-          TableName: TABLE,
-          Key: { PK: pk, SK: playerSK(participantId) },
-          UpdateExpression: 'SET podCallbackToken = :token',
-          ExpressionAttributeValues: { ':token': callbackToken },
-        }));
-
-        // NOW publish join_ack — token is safely in DDB
-        await publishToChannel({
-          channel: playerChannel,
-          events: [{ type: 'join_ack', sessionId, participantId, displayName, questionCount: questions.length, mode: categoryMeta.mode, categoryName: categoryMeta.categoryName, categoryEmoji: categoryMeta.categoryEmoji, categoryColor: categoryMeta.categoryColor }],
-        });
-      },
-      { timeout: { minutes: 35 } }, // Must exceed ODF's 30-min lobby timeout
-    );
+      startPayloadRaw = await context.waitForCallback<string>(
+        'wait-for-start',
+        async (callbackToken) => {
+          // Publish join_ack with the start callback token — client stores it
+          await publishToChannel({
+            channel: playerChannel,
+            events: [{
+              type: 'join_ack',
+              sessionId,
+              participantId,
+              displayName,
+              questionCount: questions.length,
+              mode: categoryMeta.mode,
+              categoryName: categoryMeta.categoryName,
+              categoryEmoji: categoryMeta.categoryEmoji,
+              categoryColor: categoryMeta.categoryColor,
+              callbackToken, // Client uses this to wake POD at game start
+            }],
+          });
+        },
+        { timeout: { minutes: 35 } },
+      );
     } catch (error) {
       if (error instanceof CallbackError) {
-        // Lobby timed out — game was never started. Clean up and exit.
         context.logger.info('Wait-for-start timed out — session likely cancelled');
         await context.step('write-abandoned-status', async () => {
           await ddb.send(new UpdateCommand({
@@ -376,29 +420,24 @@ export const handler = withDurableExecution(
     }
 
     const startPayload = parseCallback<CallbackPayload>(startPayloadRaw);
-    context.logger.info('Start payload received', { startTime: startPayload.startTime });
+    context.logger.info('Start signal received', { action: startPayload.action });
 
-    // Step 5: Wait for "ready" — publish start time + callback token
-    try {
-      await context.waitForCallback<CallbackPayload>(
-        'wait-for-ready',
-        async (callbackToken) => {
-          await publishToChannel({
-            channel: playerChannel,
-            events: [{ type: 'game_starting', startTime: startPayload.startTime, callbackToken }],
-          });
-        },
-        { timeout: { seconds: 30 } },
-      );
-    } catch (error) {
-      if (error instanceof CallbackError) {
-        context.logger.warn('Player did not send ready in time, proceeding anyway');
-      } else {
-        throw error;
-      }
+    // If we received a non-start signal (e.g., game was cancelled), exit cleanly
+    if (startPayload.action !== 'start') {
+      context.logger.info('Received non-start signal, exiting', { action: startPayload.action });
+      await context.step('write-cancelled-status', async () => {
+        await ddb.send(new UpdateCommand({
+          TableName: TABLE,
+          Key: { PK: pk, SK: playerSK(participantId) },
+          UpdateExpression: 'SET #s = :status',
+          ExpressionAttributeNames: { '#s': 'status' },
+          ExpressionAttributeValues: { ':status': 'completed' as PlayerStatus },
+        }));
+      });
+      return { status: 'cancelled', participantId };
     }
 
-    // Step 6: Update status to playing
+    // Step 4: Update status to playing
     await context.step('update-status-playing', async () => {
       await ddb.send(new UpdateCommand({
         TableName: TABLE,
@@ -409,28 +448,27 @@ export const handler = withDurableExecution(
       }));
     });
 
-    // Step 7: Question loop — each question in its own child context
+    // Step 5: Question loop
     let totalScore = 0;
     const questionResults: QuestionResult[] = [];
 
     for (let qIndex = 0; qIndex < questions.length; qIndex++) {
       const outcome = await processQuestion(
         context, questions[qIndex], qIndex, questions.length,
-        totalScore, pk, participantId, playerChannel,
+        totalScore, pk, participantId, sessionId, playerChannel,
       );
 
       totalScore += outcome.score;
       questionResults.push(outcome.result);
 
       if (outcome.earlyExit) {
-        // Game ended mid-question (timed mode) — finalize
         await context.step('write-final-status-early', async () => {
           await ddb.send(new UpdateCommand({
             TableName: TABLE,
             Key: { PK: pk, SK: playerSK(participantId) },
-            UpdateExpression: 'SET #s = :status',
+            UpdateExpression: 'SET #s = :status, statusDot = :dot',
             ExpressionAttributeNames: { '#s': 'status' },
-            ExpressionAttributeValues: { ':status': 'completed' as PlayerStatus },
+            ExpressionAttributeValues: { ':status': 'completed' as PlayerStatus, ':dot': 'checkmark' },
           }));
         });
 
@@ -439,13 +477,17 @@ export const handler = withDurableExecution(
             channel: playerChannel,
             events: [{ type: 'game_complete', totalScore, questionsAnswered: qIndex + 1, totalQuestions: questions.length, questionResults }],
           });
+          await publishToChannel({
+            channel: `leaderboard/${sessionId}`,
+            events: [{ type: 'player_completed', participantId, displayName, statusDot: 'checkmark' }],
+          });
         });
 
         return { status: 'completed', totalScore, questionsAnswered: qIndex + 1 };
       }
     }
 
-    // All questions answered — publish interim status and wait for game end
+    // All questions answered
     await context.step('publish-all-answered', async () => {
       await publishToChannel({
         channel: playerChannel,
@@ -459,18 +501,17 @@ export const handler = withDurableExecution(
       });
     });
 
-    // Wait for game-end signal (times_up or cancel from game channel → client sends complete)
+    // Wait for game-end signal
     try {
       await context.waitForCallback<CallbackPayload>(
         'wait-for-game-end',
         async (callbackToken) => {
-          // Publish the callback token so the client can send 'complete' when the game ends
           await publishToChannel({
             channel: playerChannel,
             events: [{ type: 'waiting_for_game_end', callbackToken }],
           });
         },
-        { timeout: { seconds: 600 } }, // 10 min max — game should end well before this
+        { timeout: { seconds: 600 } },
       );
     } catch (error) {
       if (error instanceof CallbackError) {
@@ -485,9 +526,9 @@ export const handler = withDurableExecution(
       await ddb.send(new UpdateCommand({
         TableName: TABLE,
         Key: { PK: pk, SK: playerSK(participantId) },
-        UpdateExpression: 'SET #s = :status',
+        UpdateExpression: 'SET #s = :status, statusDot = :dot',
         ExpressionAttributeNames: { '#s': 'status' },
-        ExpressionAttributeValues: { ':status': 'completed' as PlayerStatus },
+        ExpressionAttributeValues: { ':status': 'completed' as PlayerStatus, ':dot': 'checkmark' },
       }));
     });
 
@@ -495,6 +536,10 @@ export const handler = withDurableExecution(
       await publishToChannel({
         channel: playerChannel,
         events: [{ type: 'game_complete', totalScore, questionsAnswered: questions.length, totalQuestions: questions.length, questionResults }],
+      });
+      await publishToChannel({
+        channel: `leaderboard/${sessionId}`,
+        events: [{ type: 'player_completed', participantId, displayName, statusDot: 'checkmark' }],
       });
     });
 

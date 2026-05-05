@@ -323,8 +323,119 @@ Resources:
           Value: 'true'
 
   # ============================================================
+  # HTTP API (REST endpoints)
+  # ============================================================
+
+  TriviaHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Api-Key
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${TriviaAdminUserPool}
+              audience:
+                - !Ref TriviaAdminUserPoolClient
+
+  # ============================================================
   # Lambda Functions
   # ============================================================
+
+  # 0. API Handler (Standard Lambda — REST endpoints)
+  ApiHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-api-handler
+      Description: REST API handler for synchronous request/response operations
+      Handler: index.handler
+      CodeUri: functions/api-handler/
+      Timeout: 30
+      Environment:
+        Variables:
+          ODF_FUNCTION_ARN: !Ref SessionOrchestratorFunction.Alias
+          POD_FUNCTION_ARN: !Ref ParticipantOrchestratorFunction.Alias
+      Events:
+        GetCategories:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TriviaHttpApi
+            Path: /api/categories
+            Method: GET
+        CreateSession:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TriviaHttpApi
+            Path: /api/sessions
+            Method: POST
+        GetSession:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TriviaHttpApi
+            Path: /api/sessions/{id}
+            Method: GET
+            Auth:
+              Authorizer: NONE
+        StartSession:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TriviaHttpApi
+            Path: /api/sessions/{id}/start
+            Method: POST
+        CancelSession:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TriviaHttpApi
+            Path: /api/sessions/{id}/cancel
+            Method: POST
+        JoinSession:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TriviaHttpApi
+            Path: /api/sessions/{id}/join
+            Method: POST
+            Auth:
+              Authorizer: NONE
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QuestionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SessionOrchestratorFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ParticipantOrchestratorFunction
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - lambda:SendDurableExecutionCallbackSuccess
+                - lambda:SendDurableExecutionCallbackFailure
+              Resource:
+                - !GetAtt SessionOrchestratorFunction.Arn
+                - !Sub ${SessionOrchestratorFunction.Arn}:*
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - index.ts
+        External: []
 
   # 1. Session Handler (Standard Lambda)
   SessionHandlerFunction:
@@ -421,17 +532,6 @@ Resources:
             TableName: !Ref GameTable
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicDurableExecutionRolePolicy
         - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
-        - LambdaInvokePolicy:
-            FunctionName: !Ref ParticipantOrchestratorFunction
-        - Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action:
-                - lambda:SendDurableExecutionCallbackSuccess
-                - lambda:SendDurableExecutionCallbackFailure
-              Resource:
-                - !GetAtt ParticipantOrchestratorFunction.Arn
-                - !Sub ${ParticipantOrchestratorFunction.Arn}:*
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -576,6 +676,10 @@ Resources:
 # ============================================================
 
 Outputs:
+  HttpApiEndpoint:
+    Description: HTTP API endpoint for REST operations
+    Value: !Sub https://${TriviaHttpApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+
   AppSyncHttpEndpoint:
     Description: AppSync Events HTTP endpoint for publishing
     Value: !Sub https://${TriviaEventsApi.Dns.Http}/event

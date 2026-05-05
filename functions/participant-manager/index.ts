@@ -31,7 +31,7 @@ interface JoinPayload {
 }
 
 interface CallbackPayload {
-  action: 'answer' | 'skip' | 'more_time' | 'ready' | 'complete';
+  action: 'answer' | 'skip' | 'more_time' | 'ready' | 'start' | 'complete';
   callbackToken: string;
   [key: string]: unknown;
 }
@@ -83,6 +83,7 @@ export const handler = async (
           case 'skip':
           case 'more_time':
           case 'ready':
+          case 'start':
           case 'complete':
             response = await handleCallback(payload as CallbackPayload);
             break;
