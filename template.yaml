@@ -626,8 +626,8 @@ Resources:
               Action:
                 - bedrock:InvokeModel
               Resource:
-                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/*'
-                - !Sub 'arn:aws:bedrock:${AWS::Region}:*:inference-profile/us.anthropic.*'
+                - 'arn:aws:bedrock:*::foundation-model/*'
+                - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.*'
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
